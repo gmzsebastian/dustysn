@@ -1,4 +1,4 @@
-# Is It Nuclear?
+# dustysn
 
 <p align="center">
   <img src="docs/images/dustysn.png" width="200">

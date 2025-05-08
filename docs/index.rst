@@ -3,7 +3,7 @@
    :width: 200px
    :align: center
    
-Is it nuclear?
+dustysn
 ==============
 
 ``dustysn`` is a Python package designed to fit the SEDs of SNe.
