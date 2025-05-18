@@ -1,10 +1,11 @@
 # import os
 # import pytest
 # import numpy as np
-from dustyn.utils import (get_data)
+from dustyn.utils import (calc_distance)
 
 
-def test_get_data():
+def test_calc_distance():
     # Check that the get data returns None
-    output = get_data('potato')
-    assert output is None
+    output = calc_distance(0.1)
+    # Check that the output is a float
+    assert isinstance(output, float)
