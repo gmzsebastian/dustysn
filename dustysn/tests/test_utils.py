@@ -1,7 +1,7 @@
 # import os
 # import pytest
 # import numpy as np
-from dustyn.utils import (calc_distance)
+from dustysn.utils import (calc_distance)
 
 
 def test_calc_distance():
