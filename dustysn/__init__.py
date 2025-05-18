@@ -1,5 +1,0 @@
-__version__ = "0.0.1"
-__author__ = "Sebastian Gomez"
-__email__ = "sebastian.gomez@austin.utexas.edu"
-__license__ = "MIT"
-__description__ = "Fit the SEDs of dusty SNe"

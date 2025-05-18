@@ -14,19 +14,12 @@ dustysn
 
    installation
    usage
-   methodology
-
-Quick Start
------------
-
-To start do this::
-
-    import dustysn
+   reference
 
 Key Features
 ------------
 
-* Can fit silicates and carbonaceous dust
+The ``dustysn`` package can fit the JWST (MIRI or NIRCam) photometry of SNe using carbonaceous or silicate dust models.
 
 Requirements
 ------------

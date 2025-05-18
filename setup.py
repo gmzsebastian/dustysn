@@ -12,14 +12,12 @@ setup(
     packages=['dustysn'],
     license_files=["LICENSE"],
     include_package_data=True,
-    package_data={'dustysn': ['ref_data/*']},
+    package_data={'dustysn': ['ref_data/**/*', 'ref_data/*']},
     install_requires=[
         'numpy',
         'matplotlib',
         'astropy',
         'scipy',
-        'astroquery',
-        'emcee',
-        'alerce'
+        'emcee'
     ]
 )
