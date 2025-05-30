@@ -61,14 +61,38 @@ First thing to do is to import the data, which has to be stored in a text file w
      - Flux_err
      - UL
      - Filter
-   * - 6.39
-     - 0.29
+   * - 6.39e-6
+     - 2.9e-7
      - False
      - F560W
-   * - 58.12
-     - 0.79
+   * - 5.812e-5
+     - 7.9e-7
      - False
      - F1000W
+   * - 5.117e-5
+     - 1.25e-6
+     - False
+     - F1130W
+   * - 4.33e-5
+     - 5.8e-7
+     - False
+     - F1280W
+   * - 6.326e-5
+     - 6.9e-7
+     - False
+     - F1500W
+   * - 1.17e-4
+     - 1.28e-6
+     - False
+     - F1800W
+   * - 1.282e-4
+     - 1.61e-6
+     - False
+     - F2100W
+   * - 1.0247e-4
+     - 6.08e-6
+     - False
+     - F2550W
 
 Then the ``fit_dust_model`` function can be used to fit the data. The function takes the following parameters:
 

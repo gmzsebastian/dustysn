@@ -210,7 +210,9 @@ def calc_filter_flux(obs_wave, flux_obs, filt_wave, filt_trans):
 def import_data(filename, data_dir=data_dir):
     """
     Import photometry data from the specified directory
-    and format it for use in the MCMC fitting.
+    and format it for use in the MCMC fitting. If the input file
+    does not contain the Telescope or Instrument the default
+    values are set to 'JWST' and 'MIRI'.
 
     Parameters
     ----------
@@ -256,13 +258,27 @@ def import_data(filename, data_dir=data_dir):
     obs_limits = input_data['UL'] == 'True'
     obs_filters = input_data['Filter']
 
+    if 'Telescope' in input_data.colnames:
+        obs_telescope = input_data['Telescope']
+    else:
+        obs_telescope = ['JWST'] * len(obs_filters)
+
+    if 'Instrument' in input_data.colnames:
+        obs_instrument = input_data['Instrument']
+    else:
+        obs_instrument = ['MIRI'] * len(obs_filters)
+
     # Get the filter transmissions curves for MIRI
     obs_wave_filters = []
     obs_trans_filters = []
-    for filter_name in obs_filters:
+    for i in range(len(obs_filters)):
+        # Get filter, telescope, and instrument names
+        filter_name = obs_filters[i].strip().upper()
+        telescope_name = obs_telescope[i].strip().upper()
+        instrument_name = obs_instrument[i].strip().upper()
+
         # Get filter filenames
-        filter_name = filter_name.strip().upper()
-        file_name = os.path.join(data_dir, "filters", f"JWST_MIRI_{filter_name}.txt")
+        file_name = os.path.join(data_dir, "filters", f"{telescope_name}_{instrument_name}_{filter_name}.txt")
         filter_data = table.Table.read(file_name, format='ascii')
 
         obs_wave_filters.append(np.array(filter_data['WAVELENGTH']).astype(float))
