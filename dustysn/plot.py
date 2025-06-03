@@ -26,6 +26,8 @@ def plot_corner(object_name, samples_crop, results, n_components, output_dir='.'
         Directory to save the plot
     """
 
+    print('Plotting Corner...')
+
     # Define parameter labels based on number of components
     if n_components == 1:
         labels = [r"$\log(M/M_\odot)$", r"$T$ [K]"]
@@ -209,7 +211,7 @@ def plot_trace(param_chain, param_values, param_values_log, min_val, max_val,
     else:
         plt.ylim(min_val, max_val)
     if repeats > 1:
-        ax1.hist(np.ndarray.flatten(param_chain[:n_walkers, :]), bins='auto',
+        ax1.hist(np.ndarray.flatten(param_chain[:, -n_steps:]), bins='auto',
                  orientation="horizontal", color='k', range=(min_val, max_val))
     else:
         ax1.hist(np.ndarray.flatten(param_chain[:, -int(n_steps*(1-burn_in)):]), bins='auto',
