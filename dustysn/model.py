@@ -27,8 +27,11 @@ ref_priors = {
     'log_dust_mass_cold': (-6, 1),
     'temp_cold': (20, 2000),
     'log_dust_mass_hot': (-8, 1),
-    'temperature_hot': (20, 3000),
-    'radius': (1e14, 1e18)
+    'temp_hot': (20, 3000),
+    'log_dust_mass_warm': (-7, 1),
+    'temp_warm': (20, 2500),
+    'radius': (1e14, 1e18),
+    'sigma': (-3, 3)
 }
 
 
@@ -244,7 +247,7 @@ def calc_model_flux(obs_wave, dust_mass, temperature, redshift, radius=None, dis
 
 def model_flux(theta, obs_wave, obs_flux, kappa_interp, redshift, distance, radius=None,
                n_components=1, obs_wave_filters=None, obs_trans_filters=None, kappa_interp_hot=None,
-               kappa_interp_cold=None, dust_type='thin'):
+               kappa_interp_cold=None, kappa_interp_warm=None, dust_type='thin'):
     """
     Calculate model flux for given parameters with support for one or two dust components.
 
@@ -252,7 +255,7 @@ def model_flux(theta, obs_wave, obs_flux, kappa_interp, redshift, distance, radi
     ----------
     theta : tuple
         For one component: (log_dust_mass_cold, temp_cold)
-        For two components: (log_dust_mass_cold, temp_cold, log_dust_mass_hot, temperature_hot)
+        For two components: (log_dust_mass_cold, temp_cold, log_dust_mass_hot, temp_hot)
     obs_wave : array or Quantity
         Observer-frame wavelength in microns
     obs_flux : array or Quantity
@@ -271,6 +274,8 @@ def model_flux(theta, obs_wave, obs_flux, kappa_interp, redshift, distance, radi
         Pre-interpolated dust opacity data for the hot component in cm^2/g.
     kappa_interp_cold : array or Quantity, optional
         Pre-interpolated dust opacity data for the cold component in cm^2/g.
+    kappa_interp_warm : array or Quantity, optional
+        Pre-interpolated dust opacity data for the warm component in cm^2/g.
     obs_wave_filters : list of arrays, optional
         Wavelengths of the filters used in the observations
 
@@ -306,8 +311,31 @@ def model_flux(theta, obs_wave, obs_flux, kappa_interp, redshift, distance, radi
                                 kappa_interp=kappa_interp_hot, dust_type=dust_type, radius=radius)
         flux = flux1 + flux2
 
+    elif n_components == 3:
+        log_dust_mass_cold, temp_cold, log_dust_mass_hot, temp_hot, log_dust_mass_warm, temp_warm = theta
+        dust_mass_cold = 10**log_dust_mass_cold
+        dust_mass_hot = 10**log_dust_mass_hot
+        dust_mass_warm = 10**log_dust_mass_warm
+
+        # If components have different compositions
+        if kappa_interp_cold is None:
+            kappa_interp_cold = kappa_interp
+        if kappa_interp_hot is None:
+            kappa_interp_hot = kappa_interp
+        if kappa_interp_warm is None:
+            kappa_interp_warm = kappa_interp
+
+        # Calculate flux for each component and add them
+        flux1 = calc_model_flux(obs_wave, dust_mass_cold, temp_cold, redshift, distance=distance,
+                                kappa_interp=kappa_interp_cold, dust_type=dust_type, radius=radius)
+        flux2 = calc_model_flux(obs_wave, dust_mass_hot, temp_hot, redshift, distance=distance,
+                                kappa_interp=kappa_interp_hot, dust_type=dust_type, radius=radius)
+        flux3 = calc_model_flux(obs_wave, dust_mass_warm, temp_warm, redshift, distance=distance,
+                                kappa_interp=kappa_interp_warm, dust_type=dust_type, radius=radius)
+        flux = flux1 + flux2 + flux3
+
     else:
-        raise ValueError("n_components must be 1 or 2")
+        raise ValueError("n_components must be 1, 2, or 3")
 
     if obs_wave_filters is not None:
         # Apply filter transmission to the model flux
@@ -329,7 +357,7 @@ def log_likelihood(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
                    kappa_interp, redshift, distance, radius=None, n_components=1,
                    obs_wave_filters=None, obs_trans_filters=None,
                    kappa_interp_hot=None, kappa_interp_cold=None,
-                   dust_type='thin'):
+                   kappa_interp_warm=None, dust_type='thin', add_sigma=True):
     """
     Function to calculate the log likelihood of a model, but accounting
     for upper limits in the data.
@@ -338,7 +366,7 @@ def log_likelihood(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
     ----------
     theta : tuple
         For one component: (log_dust_mass_cold, temp_cold)
-        For two components: (log_dust_mass_cold, temp_cold, log_dust_mass_hot, temperature_hot)
+        For two components: (log_dust_mass_cold, temp_cold, log_dust_mass_hot, temp_hot)
     obs_wave : array
         Observed wavelengths in microns
     obs_flux : array
@@ -364,8 +392,13 @@ def log_likelihood(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
         Pre-interpolated dust opacity data for the hot component in cm^2/g.
     kappa_interp_cold : array, optional
         Pre-interpolated dust opacity data for the cold component in cm^2/g.
+    kappa_interp_warm : array, optional
+        Pre-interpolated dust opacity data for the warm component in cm^2/g.
     dust_type : str, default 'thin'
         Type of dust emission ('thin' for optically thin, 'thick' for optically thick).
+    add_sigma : bool, default True
+        If True, add an additional variance to the uncertainties defined by the sigma
+        parameter.
 
     Returns
     -------
@@ -374,28 +407,33 @@ def log_likelihood(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
     """
 
     # Calculate model flux
-    flux_model = model_flux(theta, obs_wave, obs_flux, kappa_interp, redshift, distance, radius,
+    if add_sigma:
+        theta_use, sigma = theta[:-1], 10 ** theta[-1]
+    else:
+        theta_use, sigma = theta, 0
+    flux_model = model_flux(theta_use, obs_wave, obs_flux, kappa_interp, redshift, distance, radius,
                             n_components, obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters,
                             kappa_interp_hot=kappa_interp_hot, kappa_interp_cold=kappa_interp_cold,
-                            dust_type=dust_type)
+                            kappa_interp_warm=kappa_interp_warm, dust_type=dust_type)
     ln_like = 0.0
 
     # Handle detections as usual
     is_detection = ~obs_limits
     if np.any(is_detection):
         det_error = obs_flux.value[is_detection] - flux_model.value[is_detection]
-        det_weight = 1.0 / (obs_flux_err.value[is_detection] ** 2)
+        modified_error = obs_flux_err.value[is_detection] * (1 + sigma)
+        det_weight = 1.0 / modified_error ** 2
         ln_like -= 0.5 * np.sum(det_weight * det_error ** 2)
 
         # Include normalization term for the detections
-        ln_like -= 0.5 * np.sum(np.log(2.0 * np.pi * obs_flux_err.value[is_detection] ** 2))
+        ln_like -= 0.5 * np.sum(np.log(2.0 * np.pi * modified_error ** 2))
 
     # Handle upper limits
     if np.any(obs_limits):
         # For each upper limit, calculate the integral term
         for j in np.where(obs_limits)[0]:
             # Calculate how many sigma the model is from the limit
-            z = (flux_model.value[j] - obs_flux.value[j]) / obs_flux_err.value[j]
+            z = (flux_model.value[j] - obs_flux.value[j]) / np.abs(obs_flux_err.value[j])
 
             # Use the complementary error function to calculate the integral term
             # of Equation 8 in https://arxiv.org/pdf/1210.0285
@@ -406,7 +444,8 @@ def log_likelihood(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
     return ln_like
 
 
-def log_prior(theta, priors, n_components=1, flat_prior=True):
+def log_prior(theta, priors, n_components=1, flat_prior=True,
+              mu_mass=-1.0, sigma_mass=1.0, add_sigma=True):
     """
     Calculate the log-prior for the model parameters.
 
@@ -414,12 +453,20 @@ def log_prior(theta, priors, n_components=1, flat_prior=True):
     ----------
     theta : array
         For one component: (log_dust_mass_cold, temp_cold)
-        For two components: (log_dust_mass_cold, temp_cold, log_dust_mass_hot, temperature_hot)
+        For two components: (log_dust_mass_cold, temp_cold, log_dust_mass_hot, temp_hot)
+    priors : dict
+        Dictionary containing prior bounds for the parameters.
     n_components : int
         Number of dust components (1 or 2)
     flat_prior : bool, default True
         If True, use a flat prior on the parameters.
         If False, use a Gaussian prior on the total dust mass.
+    mu_mass : float, default -1.0
+        Center of the Gaussian prior on the total dust mass (log(Mass/Msun)).
+    sigma_mass : float, default 1.0
+        Standard deviation of the Gaussian prior on the total dust mass (in dex).
+    add_sigma : bool, default True
+        If True, add an additional variance to the uncertainties defined by the sigma parameter.
 
     Returns
     -------
@@ -427,31 +474,37 @@ def log_prior(theta, priors, n_components=1, flat_prior=True):
         Log-prior of the model parameters
     """
 
-    # Implement a gaussian prior on the total dust mass
-    mu_mass = -1.0  # center at log(Mass/Msun) = -1
-    sigma_mass = 1.0  # standard deviation of 1 dex
+    # Ignore the bounds of sigma if sigma is not being added
+    if add_sigma:
+        theta_use, sigma = theta[:-1], theta[-1]
+        min_sigma = priors['sigma'][0]
+        max_sigma = priors['sigma'][1]
+    else:
+        theta_use, sigma = theta, 0
+        min_sigma = -np.inf
+        max_sigma = np.inf
 
     if n_components == 1:
-        log_dust_mass_cold, temp_cold = theta
+        log_dust_mass_cold, temp_cold = theta_use
 
         # Calculate total mass (just the cold component in this case)
         log_total_mass = log_dust_mass_cold
 
         # Check if the parameters are within the prior bounds
         if (priors['log_dust_mass_cold'][0] < log_dust_mass_cold < priors['log_dust_mass_cold'][1] and
-                priors['temp_cold'][0] < temp_cold < priors['temp_cold'][1]):
+                priors['temp_cold'][0] < temp_cold < priors['temp_cold'][1] and
+                min_sigma < sigma < max_sigma):
             # Apply Gaussian prior on total dust mass
             mass_prior = -0.5 * ((log_total_mass - mu_mass) / sigma_mass)**2
-            mass_prior = -log_total_mass
             if flat_prior:
-                return 0.0
+                return -np.log(10 ** sigma)
             else:
-                return mass_prior
+                return -np.log(10 ** sigma) + mass_prior
         else:
             return -np.inf
 
     elif n_components == 2:
-        log_dust_mass_cold, temp_cold, log_dust_mass_hot, temperature_hot = theta
+        log_dust_mass_cold, temp_cold, log_dust_mass_hot, temp_hot = theta_use
 
         # Calculate total mass (sum of cold and hot components in linear space)
         total_mass = 10**log_dust_mass_cold + 10**log_dust_mass_hot
@@ -461,30 +514,59 @@ def log_prior(theta, priors, n_components=1, flat_prior=True):
         if (priors['log_dust_mass_cold'][0] < log_dust_mass_cold < priors['log_dust_mass_cold'][1] and
                 priors['temp_cold'][0] < temp_cold < priors['temp_cold'][1] and
                 priors['log_dust_mass_hot'][0] < log_dust_mass_hot < priors['log_dust_mass_hot'][1] and
-                priors['temperature_hot'][0] < temperature_hot < priors['temperature_hot'][1]):
-            # Add a prior to encourage temperature_hot > temp_cold (order)
-            if temperature_hot > temp_cold:
+                priors['temp_hot'][0] < temp_hot < priors['temp_hot'][1] and
+                min_sigma < sigma < max_sigma):
+            # Add a prior to encourage temp_hot > temp_cold (order)
+            if temp_hot > temp_cold:
                 # Apply Gaussian prior on total dust mass
                 mass_prior = -0.5 * ((log_total_mass - mu_mass) / sigma_mass)**2
-                mass_prior = -log_total_mass
                 if flat_prior:
-                    return 0.0
+                    return -np.log(10 ** sigma)
                 else:
-                    return mass_prior
+                    return -np.log(10 ** sigma) + mass_prior
+            else:
+                return -np.inf
+        else:
+            return -np.inf
+
+    elif n_components == 3:
+        log_dust_mass_cold, temp_cold, log_dust_mass_hot, temp_hot, log_dust_mass_warm, temp_warm = theta_use
+
+        # Calculate total mass (sum of cold, hot, and warm components in linear space)
+        total_mass = 10**log_dust_mass_cold + 10**log_dust_mass_hot + 10**log_dust_mass_warm
+        log_total_mass = np.log10(total_mass)
+
+        # Check if all parameters are within the prior bounds
+        if (priors['log_dust_mass_cold'][0] < log_dust_mass_cold < priors['log_dust_mass_cold'][1] and
+                priors['temp_cold'][0] < temp_cold < priors['temp_cold'][1] and
+                priors['log_dust_mass_hot'][0] < log_dust_mass_hot < priors['log_dust_mass_hot'][1] and
+                priors['temp_hot'][0] < temp_hot < priors['temp_hot'][1] and
+                priors['log_dust_mass_warm'][0] < log_dust_mass_warm < priors['log_dust_mass_warm'][1] and
+                priors['temp_warm'][0] < temp_warm < priors['temp_warm'][1] and
+                min_sigma < sigma < max_sigma):
+            # Add a prior to encourage temp_hot > temp_cold and temp_warm > temp_cold (order)
+            if temp_hot > temp_cold and temp_warm > temp_cold and temp_hot > temp_warm:
+                # Apply Gaussian prior on total dust mass
+                mass_prior = -0.5 * ((log_total_mass - mu_mass) / sigma_mass)**2
+                if flat_prior:
+                    return -np.log(10 ** sigma)
+                else:
+                    return -np.log(10 ** sigma) + mass_prior
             else:
                 return -np.inf
         else:
             return -np.inf
 
     else:
-        raise ValueError("n_components must be 1 or 2")
+        raise ValueError("n_components must be 1, 2, or 3")
 
 
 def log_probability(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
                     kappa_interp, redshift, distance, radius=None, n_components=1,
                     obs_wave_filters=None, obs_trans_filters=None,
                     kappa_interp_hot=None, kappa_interp_cold=None,
-                    dust_type='thin', flat_prior=True, priors=None):
+                    kappa_interp_warm=None, dust_type='thin',
+                    flat_prior=True, priors=None, add_sigma=True):
     """
     Calculate the log-probability of the model given the observed data.
 
@@ -492,7 +574,7 @@ def log_probability(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
     ----------
     theta : array
         For one component: (log_dust_mass_cold, temp_cold)
-        For two components: (log_dust_mass_cold, temp_cold, log_dust_mass_hot, temperature_hot)
+        For two components: (log_dust_mass_cold, temp_cold, log_dust_mass_hot, temp_hot)
     obs_wave : array
         Observer-frame wavelength in microns
     obs_flux : array
@@ -519,12 +601,17 @@ def log_probability(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
         Pre-interpolated dust opacity data for the hot component in cm^2/g.
     kappa_interp_cold : array, optional
         Pre-interpolated dust opacity data for the cold component in cm^2/g.
+    kappa_interp_warm : array, optional
+        Pre-interpolated dust opacity data for the warm component in cm^2/g.
     dust_type : str, default 'thin'
         Type of dust emission ('thin' for optically thin, 'thick' for optically thick).
     flat_prior : bool, default True
         If True, use a flat prior on the parameters.
     priors : dict, optional
         Dictionary containing prior bounds for the parameters.
+    add_sigma : bool, default True
+        If True, add an additional variance to the uncertainties defined by the sigma
+        parameter.
 
     Returns
     -------
@@ -533,7 +620,7 @@ def log_probability(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
     """
 
     # First check the prior
-    lp = log_prior(theta, priors, n_components, flat_prior)
+    lp = log_prior(theta, priors, n_components, flat_prior, add_sigma=add_sigma)
     if not np.isfinite(lp):
         return -np.inf
 
@@ -541,7 +628,7 @@ def log_probability(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
     return lp + log_likelihood(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
                                kappa_interp, redshift, distance, radius, n_components,
                                obs_wave_filters, obs_trans_filters, kappa_interp_hot,
-                               kappa_interp_cold, dust_type)
+                               kappa_interp_cold, kappa_interp_warm, dust_type, add_sigma)
 
 
 def no_warnings(sampler, pos, n_steps, emcee_progress=True):
@@ -683,10 +770,11 @@ def mcmc_with_sigma_clipping(sampler, pos, n_steps, sigma_clip=2.0, repeats=3, e
 
 
 def plot_model(object_name, last_samples, results, obs_wave, obs_flux, obs_flux_err, obs_wave_samples,
-               kappa_interp, redshift, distance, wave_kappa_hot, wave_kappa_cold, kappa, composition,
+               kappa_interp, redshift, distance, wave_kappa_hot, wave_kappa_cold, wave_kappa_warm, kappa, composition,
                n_components=1, fig_size=(8, 6), obs_wave_filters=None, obs_trans_filters=None, output_dir='.',
-               kappa_interp_hot=None, kappa_interp_cold=None, kappa_hot=None, kappa_cold=None,
-               composition_hot=None, composition_cold=None, dust_type='thin', radius=None):
+               kappa_interp_hot=None, kappa_interp_cold=None, kappa_interp_warm=None, kappa_hot=None, kappa_cold=None,
+               kappa_warm=None, composition_hot=None, composition_cold=None, composition_warm=None, dust_type='thin',
+               radius=None, add_sigma=True):
     """
     Plot the MCMC results: corner plot and model fit, supporting 1 or 2 dust components.
 
@@ -732,32 +820,53 @@ def plot_model(object_name, last_samples, results, obs_wave, obs_flux, obs_flux_
         Pre-interpolated dust opacity data for the hot component in cm^2/g.
     kappa_interp_cold : array, optional
         Pre-interpolated dust opacity data for the cold component in cm^2/g.
+    kappa_interp_warm : array, optional
+        Pre-interpolated dust opacity data for the warm component in cm^2/g.
     kappa_hot : array
         Dust opacity data in cm^2/g for hot component
     kappa_cold : array
         Dust opacity data in cm^2/g for cold component
+    kappa_warm : array
+        Dust opacity data in cm^2/g for warm component
     composition_hot : str, optional
         Composition of the hot dust component
     composition_cold : str, optional
         Composition of the cold dust component
+    composition_warm : str, optional
+        Composition of the warm dust component
     dust_type : str, default 'thin'
         Type of dust emission ('thin' for optically thin, 'thick' for optically thick).
+    radius : float, optional
+        Radius of the dust shell in cm. Only used if dust_type is 'thick'.
+    add_sigma : bool, default True
+        If True, add an additional variance to the uncertainties defined by the sigma parameter.
     """
 
     # Plot data and model fit
     print('Plotting Model...')
     plt.figure(figsize=fig_size)
 
-    # Plot observed data points
-    plt.errorbar(obs_wave.value, obs_flux.value, yerr=obs_flux_err.value,
-                 fmt='o', color='k', label='Observed data', zorder=3, alpha=0.7)
-
     # Median model at observation points for comparison
-    median_params = [results[key][0] for key in results.keys()][:-1]
+    if add_sigma:
+        median_params = [results[key][0] for key in results.keys()][:-2]
+        median_sigma = 10 ** results['sigma'][0]
+    else:
+        median_params = [results[key][0] for key in results.keys()][:-1]
+        median_sigma = 0
     median_model = model_flux(median_params, obs_wave_samples, obs_flux, kappa_interp, redshift, distance,
                               radius, n_components, obs_wave_filters=obs_wave_filters,
                               obs_trans_filters=obs_trans_filters, kappa_interp_hot=kappa_interp_hot,
-                              kappa_interp_cold=kappa_interp_cold, dust_type=dust_type)
+                              kappa_interp_cold=kappa_interp_cold, kappa_interp_warm=kappa_interp_warm,
+                              dust_type=dust_type)
+
+    # Plot observed data points
+    plt.errorbar(obs_wave.value, obs_flux.value, yerr=obs_flux_err.value,
+                 fmt='o', color='k', label='Observed data', zorder=3, alpha=0.7)
+    # Plot errorbars with no markers with obs_flux_err.value + median_sigma
+    if add_sigma:
+        eb1 = plt.errorbar(obs_wave.value, obs_flux.value, yerr=obs_flux_err.value * (1 + median_sigma),
+                           fmt='none', color='orange', zorder=3, alpha=0.7, label='Additional Variance')
+        eb1[-1][0].set_linestyle('--')
 
     plt.scatter(obs_wave.value, median_model.value, color='green', marker='s',
                 s=80, label='Filter Integrated Model', zorder=2, alpha=0.7)
@@ -771,20 +880,26 @@ def plot_model(object_name, last_samples, results, obs_wave, obs_flux, obs_flux_
         kappa_cold = kappa
     if kappa_hot is None:
         kappa_hot = kappa
+    if kappa_warm is None:
+        kappa_warm = kappa
 
     if composition_hot is None:
         composition_hot = composition
     if composition_cold is None:
         composition_cold = composition
+    if composition_warm is None:
+        composition_warm = composition
 
     # Interpolate kappa to the fine grid's rest wavelengths
     wave_dense_rest = wave_dense / (1 + redshift)
     kappa_dense_hot = interpolate_kappa(wave_kappa_hot, kappa_hot, wave_dense_rest)
     kappa_dense_cold = interpolate_kappa(wave_kappa_cold, kappa_cold, wave_dense_rest)
+    kappa_dense_warm = interpolate_kappa(wave_kappa_warm, kappa_warm, wave_dense_rest)
 
     # Compute the median model on fine grid
     model_dense = model_flux(median_params, wave_dense, obs_flux, kappa_dense_hot, redshift, distance, radius, n_components,
-                             kappa_interp_hot=kappa_dense_hot, kappa_interp_cold=kappa_dense_cold, dust_type=dust_type)
+                             kappa_interp_hot=kappa_dense_hot, kappa_interp_cold=kappa_dense_cold,
+                             kappa_interp_warm=kappa_dense_warm, dust_type=dust_type)
     total_M = results['total_dust_mass'][0]
 
     if n_components == 1:
@@ -825,7 +940,7 @@ def plot_model(object_name, last_samples, results, obs_wave, obs_flux, obs_flux_
         log_M_cold, log_M_cold_upper, log_M_cold_lower = results['log_dust_mass_cold']
         T_cold, T_cold_upper, T_cold_lower = results['temp_cold']
         log_M_hot, log_M_hot_upper, log_M_hot_lower = results['log_dust_mass_hot']
-        T_hot, T_hot_upper, T_hot_lower = results['temperature_hot']
+        T_hot, T_hot_upper, T_hot_lower = results['temp_hot']
 
         # Convert log mass to actual mass in scientific notation
         M_cold = 10**log_M_cold
@@ -907,13 +1022,151 @@ def plot_model(object_name, last_samples, results, obs_wave, obs_flux, obs_flux_
         plt.plot(wave_dense.value, comp2_model.value, color='r', linestyle='--', alpha=0.7, linewidth=1.5,
                  label=hot_label)
 
+    elif n_components == 3:
+        # Component 1
+        comp1_params = (median_params[0], median_params[1])
+        comp1_model = model_flux(comp1_params, wave_dense, obs_flux, kappa_dense_cold, redshift, distance,
+                                 radius, n_components=1, dust_type=dust_type)
+
+        # Extract values
+        log_M_cold, log_M_cold_upper, log_M_cold_lower = results['log_dust_mass_cold']
+        T_cold, T_cold_upper, T_cold_lower = results['temp_cold']
+        log_M_hot, log_M_hot_upper, log_M_hot_lower = results['log_dust_mass_hot']
+        T_hot, T_hot_upper, T_hot_lower = results['temp_hot']
+        log_M_warm, log_M_warm_upper, log_M_warm_lower = results['log_dust_mass_warm']
+        T_warm, T_warm_upper, T_warm_lower = results['temp_warm']
+
+        # Convert log mass to actual mass in scientific notation
+        M_cold = 10**log_M_cold
+        M_cold_upper = M_cold * (10**log_M_cold_upper - 1)  # Convert log error to linear
+        M_cold_lower = M_cold * (1 - 10**(-log_M_cold_lower))
+
+        M_hot = 10**log_M_hot
+        M_hot_upper = M_hot * (10**log_M_hot_upper - 1)
+        M_hot_lower = M_hot * (1 - 10**(-log_M_hot_lower))
+
+        M_warm = 10**log_M_warm
+        M_warm_upper = M_warm * (10**log_M_warm_upper - 1)
+        M_warm_lower = M_warm * (1 - 10**(-log_M_warm_lower))
+
+        if radius is None:
+            radius_label = ''
+        else:
+            radius_label = f'\nR = {radius:.1e} cm'
+
+        # Create formatted strings with appropriate precision
+        if M_cold < 1e-2:
+            cold_label = (
+                f"Cold {dust_type} {composition_cold}\n"
+                r"$M = "
+                f"{M_cold:.1e}"
+                r"^{+" + f"{M_cold_upper:.1e}" + r"}"
+                r"_{-" + f"{M_cold_lower:.1e}" + r"} \, M_\odot$"
+                "\n"
+                r"$T = "
+                f"{T_cold:.0f}"
+                r"^{+" + f"{T_cold_upper:.0f}" + r"}"
+                r"_{-" + f"{T_cold_lower:.0f}" + r"} \, {\rm K}$" +
+                radius_label
+            )
+        else:
+            cold_label = (
+                f"Cold {dust_type} {composition_cold}\n"
+                r"$M = "
+                f"{M_cold:.2f}"
+                r"^{+" + f"{M_cold_upper:.2f}" + r"}"
+                r"_{-" + f"{M_cold_lower:.2f}" + r"} \, M_\odot$"
+                "\n"
+                r"$T = "
+                f"{T_cold:.0f}"
+                r"^{+" + f"{T_cold_upper:.0f}" + r"}"
+                r"_{-" + f"{T_cold_lower:.0f}" + r"} \, {\rm K}$" +
+                radius_label
+            )
+        if M_hot < 1e-2:
+            hot_label = (
+                f"Hot {dust_type} {composition_hot}\n"
+                r"$M = "
+                f"{M_hot:.1e}"
+                r"^{+" + f"{M_hot_upper:.1e}" + r"}"
+                r"_{-" + f"{M_hot_lower:.1e}" + r"} \, M_\odot$"
+                "\n"
+                r"$T = "
+                f"{T_hot:.0f}"
+                r"^{+" + f"{T_hot_upper:.0f}" + r"}"
+                r"_{-" + f"{T_hot_lower:.0f}" + r"} \, {\rm K}$" +
+                radius_label
+            )
+        else:
+            hot_label = (
+                f"Hot {dust_type} {composition_hot}\n"
+                r"$M = "
+                f"{M_hot:.2f}"
+                r"^{+" + f"{M_hot_upper:.2f}" + r"}"
+                r"_{-" + f"{M_hot_lower:.2f}" + r"} \, M_\odot$"
+                "\n"
+                r"$T = "
+                f"{T_hot:.0f}"
+                r"^{+" + f"{T_hot_upper:.0f}" + r"}"
+                r"_{-" + f"{T_hot_lower:.0f}" + r"} \, {\rm K}$" +
+                radius_label
+            )
+        if M_warm < 1e-2:
+            warm_label = (
+                f"Warm {dust_type} {composition_warm}\n"
+                r"$M = "
+                f"{M_warm:.1e}"
+                r"^{+" + f"{M_warm_upper:.1e}" + r"}"
+                r"_{-" + f"{M_warm_lower:.1e}" + r"} \, M_\odot$"
+                "\n"
+                r"$T = "
+                f"{T_warm:.0f}"
+                r"^{+" + f"{T_warm_upper:.0f}" + r"}"
+                r"_{-" + f"{T_warm_lower:.0f}" + r"} \, {\rm K}$" +
+                radius_label
+            )
+        else:
+            warm_label = (
+                f"Warm {dust_type} {composition_warm}\n"
+                r"$M = "
+                f"{M_warm:.2f}"
+                r"^{+" + f"{M_warm_upper:.2f}" + r"}"
+                r"_{-" + f"{M_warm_lower:.2f}" + r"} \, M_\odot$"
+                "\n"
+                r"$T = "
+                f"{T_warm:.0f}"
+                r"^{+" + f"{T_warm_upper:.0f}" + r"}"
+                r"_{-" + f"{T_warm_lower:.0f}" + r"} \, {\rm K}$" +
+                radius_label
+            )
+        plt.plot(wave_dense.value, comp1_model.value, color='b', linestyle='--', alpha=0.7, linewidth=1.5,
+                 label=cold_label)
+        # Component 3
+        comp3_params = (median_params[4], median_params[5])
+        comp3_model = model_flux(comp3_params, wave_dense, obs_flux, kappa_dense_warm, redshift, distance,
+                                 radius, n_components=1, dust_type=dust_type)
+        plt.plot(wave_dense.value, comp3_model.value, color='purple', linestyle='--', alpha=0.7, linewidth=1.5,
+                 label=warm_label)
+        # Component 2
+        comp2_params = (median_params[2], median_params[3])
+        comp2_model = model_flux(comp2_params, wave_dense, obs_flux, kappa_dense_hot, redshift, distance,
+                                 radius, n_components=1, dust_type=dust_type)
+        plt.plot(wave_dense.value, comp2_model.value, color='r', linestyle='--', alpha=0.7, linewidth=1.5,
+                 label=hot_label)
+
     # Visualize uncertainty
     # Calculate model for a range of samples to create confidence interval
     model_values = np.zeros((len(last_samples), len(wave_dense)))
 
     for i, idx in enumerate(last_samples):
-        sample_model = model_flux(idx, wave_dense, obs_flux, kappa_dense_hot, redshift, distance, radius, n_components,
-                                  kappa_interp_hot=kappa_dense_hot, kappa_interp_cold=kappa_dense_cold, dust_type=dust_type)
+        if add_sigma:
+            sample_model = model_flux(idx[:-1], wave_dense, obs_flux, kappa_dense_hot, redshift, distance, radius, n_components,
+                                      kappa_interp_hot=kappa_dense_hot, kappa_interp_cold=kappa_dense_cold, kappa_interp_warm=kappa_dense_warm,
+                                      dust_type=dust_type)
+        else:
+            sample_model = model_flux(idx, wave_dense, obs_flux, kappa_dense_hot, redshift, distance, radius, n_components,
+                                      kappa_interp_hot=kappa_dense_hot, kappa_interp_cold=kappa_dense_cold, kappa_interp_warm=kappa_dense_warm,
+                                      dust_type=dust_type)
         model_values[i] = sample_model.value
         plt.plot(wave_dense.value, sample_model.value, linewidth=0.1, color='green', alpha=0.1)
 
@@ -951,7 +1204,8 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
                    n_steps=1000, burn_in=0.75, n_cores=1, sigma_clip=2, repeats=3, emcee_progress=True,
                    obs_wave_filters=None, obs_trans_filters=None, n_filter_samples=1000, plot=False, plots_model=False,
                    plots_corner=False, plots_trace=False, output_dir='.', initial_pos=None, composition_hot=None,
-                   composition_cold=None, dust_type='thin', radius=None, flat_prior=True, priors=None):
+                   composition_cold=None, composition_warm=None, dust_type='thin', radius=None, flat_prior=True, priors=None,
+                   add_sigma=True):
     """
     Run MCMC sampler without multiprocessing.
 
@@ -1017,6 +1271,8 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
         If True, use a flat prior on the parameters.
     priors : dict, optional
         Dictionary with prior bounds for the parameters. If None, default priors will be used.
+    add_sigma : bool, default True
+        If True, add an additional variance to the uncertainties defined by the sigma parameter.
 
     Returns
     -------
@@ -1036,6 +1292,8 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
         composition_cold = composition
     if composition_hot is None:
         composition_hot = composition
+    if composition_warm is None:
+        composition_warm = composition
 
     # Import dust data
     wave_kappa, kappa = import_coefficients(grain_size=grain_size, composition=composition,
@@ -1049,6 +1307,10 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
     wave_kappa_cold, kappa_cold = import_coefficients(grain_size=grain_size, composition=composition_cold,
                                                       interp_grain=False)
 
+    # For warm component
+    wave_kappa_warm, kappa_warm = import_coefficients(grain_size=grain_size, composition=composition_warm,
+                                                      interp_grain=False)
+
     if obs_wave_filters is not None:
         # Pre-calculate interpolated opacities for the filter wavelengths
         mins, maxs = np.array([(np.min(i), np.max(i)) for i in obs_wave_filters]).T
@@ -1059,6 +1321,7 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
         kappa_interp = interpolate_kappa(wave_kappa, kappa, rest_wave)
         kappa_interp_hot = interpolate_kappa(wave_kappa_hot, kappa_hot, rest_wave)
         kappa_interp_cold = interpolate_kappa(wave_kappa_cold, kappa_cold, rest_wave)
+        kappa_interp_warm = interpolate_kappa(wave_kappa_warm, kappa_warm, rest_wave)
         obs_wave_samples = sampled_waves * u.micron
     else:
         # Pre-calculate interpolated opacities for the reference wavelengths
@@ -1066,6 +1329,7 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
         kappa_interp = interpolate_kappa(wave_kappa, kappa, rest_wave)
         kappa_interp_hot = interpolate_kappa(wave_kappa_hot, kappa_hot, rest_wave)
         kappa_interp_cold = interpolate_kappa(wave_kappa_cold, kappa_cold, rest_wave)
+        kappa_interp_warm = interpolate_kappa(wave_kappa_warm, kappa_warm, rest_wave)
         obs_wave_samples = obs_wave
 
     # Set up initial positions for walkers
@@ -1075,7 +1339,12 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
                                                    initial_pos['log_dust_mass_cold'][1], n_walkers)
             temp_cold = np.random.uniform(initial_pos['temp_cold'][0],
                                           initial_pos['temp_cold'][1], n_walkers)
-            pos = np.array([log_dust_mass_cold, temp_cold]).T
+            log_sigma = np.random.uniform(initial_pos['sigma'][0],
+                                          initial_pos['sigma'][1], n_walkers)
+            if add_sigma:
+                pos = np.array([log_dust_mass_cold, temp_cold, log_sigma]).T
+            else:
+                pos = np.array([log_dust_mass_cold, temp_cold]).T
             return pos
         elif n_components == 2:
             log_dust_mass_cold = np.random.uniform(initial_pos['log_dust_mass_cold'][0],
@@ -1084,13 +1353,42 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
                                           initial_pos['temp_cold'][1], n_walkers)
             log_dust_mass_hot = np.random.uniform(initial_pos['log_dust_mass_hot'][0],
                                                   initial_pos['log_dust_mass_hot'][1], n_walkers)
-            temperature_hot = np.random.uniform(initial_pos['temperature_hot'][0],
-                                                initial_pos['temperature_hot'][1], n_walkers)
-            pos = np.array([log_dust_mass_cold, temp_cold,
-                           log_dust_mass_hot, temperature_hot]).T
+            temp_hot = np.random.uniform(initial_pos['temp_hot'][0],
+                                         initial_pos['temp_hot'][1], n_walkers)
+            log_sigma = np.random.uniform(initial_pos['sigma'][0],
+                                          initial_pos['sigma'][1], n_walkers)
+            if add_sigma:
+                pos = np.array([log_dust_mass_cold, temp_cold, log_dust_mass_hot,
+                                temp_hot, log_sigma]).T
+            else:
+                pos = np.array([log_dust_mass_cold, temp_cold, log_dust_mass_hot,
+                                temp_hot]).T
             return pos
+        elif n_components == 3:
+            log_dust_mass_cold = np.random.uniform(initial_pos['log_dust_mass_cold'][0],
+                                                   initial_pos['log_dust_mass_cold'][1], n_walkers)
+            temp_cold = np.random.uniform(initial_pos['temp_cold'][0],
+                                          initial_pos['temp_cold'][1], n_walkers)
+            log_dust_mass_hot = np.random.uniform(initial_pos['log_dust_mass_hot'][0],
+                                                  initial_pos['log_dust_mass_hot'][1], n_walkers)
+            temp_hot = np.random.uniform(initial_pos['temp_hot'][0],
+                                         initial_pos['temp_hot'][1], n_walkers)
+            log_dust_mass_warm = np.random.uniform(initial_pos['log_dust_mass_warm'][0],
+                                                   initial_pos['log_dust_mass_warm'][1], n_walkers)
+            temp_warm = np.random.uniform(initial_pos['temp_warm'][0],
+                                          initial_pos['temp_warm'][1], n_walkers)
+            log_sigma = np.random.uniform(initial_pos['sigma'][0],
+                                          initial_pos['sigma'][1], n_walkers)
+            if add_sigma:
+                pos = np.array([log_dust_mass_cold, temp_cold, log_dust_mass_hot, temp_hot,
+                                log_dust_mass_warm, temp_warm, log_sigma]).T
+            else:
+                pos = np.array([log_dust_mass_cold, temp_cold, log_dust_mass_hot, temp_hot,
+                                log_dust_mass_warm, temp_warm]).T
+            return pos
+
         else:
-            raise ValueError("n_components must be 1 or 2")
+            raise ValueError("n_components must be 1, 2, or 3")
 
     if priors is None:
         priors = ref_priors
@@ -1101,7 +1399,7 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
     pos_in = create_prior(n_walkers, initial_pos)
     pos_out = pos_in[0:1]
     while len(pos_out) < n_walkers:
-        pos = pos_in[[np.isfinite(log_prior(i, priors, n_components=n_components)) for i in pos_in]]
+        pos = pos_in[[np.isfinite(log_prior(i, priors, n_components=n_components, add_sigma=add_sigma)) for i in pos_in]]
         pos_out = np.append(pos_out, pos, axis=0)
 
     # Crop to correct length
@@ -1112,8 +1410,8 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
 
     # Set up arguments for the log-probability function
     args = (obs_wave_samples, obs_flux, obs_flux_err, obs_limits, kappa_interp, redshift, distance, radius,
-            n_components, obs_wave_filters, obs_trans_filters, kappa_interp_hot, kappa_interp_cold, dust_type,
-            flat_prior, priors)
+            n_components, obs_wave_filters, obs_trans_filters, kappa_interp_hot, kappa_interp_cold, kappa_interp_warm, dust_type,
+            flat_prior, priors, add_sigma)
 
     # Run MCMC without multiprocessing
     n_dim = pos.shape[1]
@@ -1148,36 +1446,100 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
 
     # Obtain the parametrs of the best fit
     if n_components == 1:
-        log_dust_mass_cold_mcmc, temp_cold_mcmc = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
-                                                      zip(*np.percentile(samples_crop, [15.87, 50, 84.13], axis=0)))
+        if add_sigma:
+            log_dust_mass_cold_mcmc, temp_cold_mcmc, sigma_mcmc = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
+                                                                      zip(*np.percentile(samples_crop, [15.87, 50, 84.13], axis=0)))
+        else:
+            log_dust_mass_cold_mcmc, temp_cold_mcmc = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
+                                                          zip(*np.percentile(samples_crop, [15.87, 50, 84.13], axis=0)))
         # Calculate total dust mass
         total_dust_mass_samples = 10 ** samples_crop[:, 0]
         total_dust_mass_percentiles = np.percentile(total_dust_mass_samples, [15.87, 50, 84.13], axis=0)
         total_dust_mass_mcmc = (total_dust_mass_percentiles[1],
                                 total_dust_mass_percentiles[2] - total_dust_mass_percentiles[1],
                                 total_dust_mass_percentiles[1] - total_dust_mass_percentiles[0])
-        results = {
-            'log_dust_mass_cold': log_dust_mass_cold_mcmc,
-            'temp_cold': temp_cold_mcmc,
-            'total_dust_mass': total_dust_mass_mcmc
-        }
+        if add_sigma:
+            results = {
+                'log_dust_mass_cold': log_dust_mass_cold_mcmc,
+                'temp_cold': temp_cold_mcmc,
+                'total_dust_mass': total_dust_mass_mcmc,
+                'sigma': sigma_mcmc
+            }
+        else:
+            results = {
+                'log_dust_mass_cold': log_dust_mass_cold_mcmc,
+                'temp_cold': temp_cold_mcmc,
+                'total_dust_mass': total_dust_mass_mcmc
+            }
     elif n_components == 2:
-        log_dust_mass_cold_mcmc, temp_cold_mcmc, log_dust_mass_hot_mcmc, temperature_hot_mcmc = \
-            map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
-                zip(*np.percentile(samples_crop, [15.87, 50, 84.13], axis=0)))
+        if add_sigma:
+            log_dust_mass_cold_mcmc, temp_cold_mcmc, log_dust_mass_hot_mcmc, temp_hot_mcmc, sigma_mcmc = \
+                map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
+                    zip(*np.percentile(samples_crop, [15.87, 50, 84.13], axis=0)))
+        else:
+            log_dust_mass_cold_mcmc, temp_cold_mcmc, log_dust_mass_hot_mcmc, temp_hot_mcmc = \
+                map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
+                    zip(*np.percentile(samples_crop, [15.87, 50, 84.13], axis=0)))
         # Calculate total dust mass
         total_dust_mass_samples = 10 ** samples_crop[:, 0] + 10 ** samples_crop[:, 2]
         total_dust_mass_percentiles = np.percentile(total_dust_mass_samples, [15.87, 50, 84.13], axis=0)
         total_dust_mass_mcmc = (total_dust_mass_percentiles[1],
                                 total_dust_mass_percentiles[2] - total_dust_mass_percentiles[1],
                                 total_dust_mass_percentiles[1] - total_dust_mass_percentiles[0])
-        results = {
-            'log_dust_mass_cold': log_dust_mass_cold_mcmc,
-            'temp_cold': temp_cold_mcmc,
-            'log_dust_mass_hot': log_dust_mass_hot_mcmc,
-            'temperature_hot': temperature_hot_mcmc,
-            'total_dust_mass': total_dust_mass_mcmc
-        }
+        if add_sigma:
+            results = {
+                'log_dust_mass_cold': log_dust_mass_cold_mcmc,
+                'temp_cold': temp_cold_mcmc,
+                'log_dust_mass_hot': log_dust_mass_hot_mcmc,
+                'temp_hot': temp_hot_mcmc,
+                'total_dust_mass': total_dust_mass_mcmc,
+                'sigma': sigma_mcmc
+            }
+        else:
+            results = {
+                'log_dust_mass_cold': log_dust_mass_cold_mcmc,
+                'temp_cold': temp_cold_mcmc,
+                'log_dust_mass_hot': log_dust_mass_hot_mcmc,
+                'temp_hot': temp_hot_mcmc,
+                'total_dust_mass': total_dust_mass_mcmc
+            }
+    elif n_components == 3:
+        if add_sigma:
+            (log_dust_mass_cold_mcmc, temp_cold_mcmc, log_dust_mass_hot_mcmc, temp_hot_mcmc,
+             log_dust_mass_warm_mcmc, temp_warm_mcmc, sigma_mcmc) = \
+                map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
+                    zip(*np.percentile(samples_crop, [15.87, 50, 84.13], axis=0)))
+        else:
+            log_dust_mass_cold_mcmc, temp_cold_mcmc, log_dust_mass_hot_mcmc, temp_hot_mcmc, log_dust_mass_warm_mcmc, temp_warm_mcmc = \
+                map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
+                    zip(*np.percentile(samples_crop, [15.87, 50, 84.13], axis=0)))
+        # Calculate total dust mass
+        total_dust_mass_samples = 10 ** samples_crop[:, 0] + 10 ** samples_crop[:, 2] + 10 ** samples_crop[:, 4]
+        total_dust_mass_percentiles = np.percentile(total_dust_mass_samples, [15.87, 50, 84.13], axis=0)
+        total_dust_mass_mcmc = (total_dust_mass_percentiles[1],
+                                total_dust_mass_percentiles[2] - total_dust_mass_percentiles[1],
+                                total_dust_mass_percentiles[1] - total_dust_mass_percentiles[0])
+        if add_sigma:
+            results = {
+                'log_dust_mass_cold': log_dust_mass_cold_mcmc,
+                'temp_cold': temp_cold_mcmc,
+                'log_dust_mass_hot': log_dust_mass_hot_mcmc,
+                'temp_hot': temp_hot_mcmc,
+                'log_dust_mass_warm': log_dust_mass_warm_mcmc,
+                'temp_warm': temp_warm_mcmc,
+                'total_dust_mass': total_dust_mass_mcmc,
+                'sigma': sigma_mcmc
+            }
+        else:
+            results = {
+                'log_dust_mass_cold': log_dust_mass_cold_mcmc,
+                'temp_cold': temp_cold_mcmc,
+                'log_dust_mass_hot': log_dust_mass_hot_mcmc,
+                'temp_hot': temp_hot_mcmc,
+                'log_dust_mass_warm': log_dust_mass_warm_mcmc,
+                'temp_warm': temp_warm_mcmc,
+                'total_dust_mass': total_dust_mass_mcmc
+            }
 
     # Make sure the directory exists
     os.makedirs(output_dir, exist_ok=True)
@@ -1191,18 +1553,22 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
     # Create requested plots
     if plots_model:
         plot_model(object_name, last_samples, results, obs_wave, obs_flux, obs_flux_err, obs_wave_samples,
-                   kappa_interp, redshift, distance, wave_kappa_hot, wave_kappa_cold, kappa, composition,
+                   kappa_interp, redshift, distance, wave_kappa_hot, wave_kappa_cold, wave_kappa_warm, kappa, composition,
                    n_components=n_components, obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters,
                    output_dir=output_dir, kappa_interp_hot=kappa_interp_hot, kappa_interp_cold=kappa_interp_cold,
-                   kappa_hot=kappa_hot, kappa_cold=kappa_cold, composition_cold=composition_cold,
-                   composition_hot=composition_hot, dust_type=dust_type, radius=radius)
+                   kappa_interp_warm=kappa_interp_warm, kappa_hot=kappa_hot, kappa_cold=kappa_cold, kappa_warm=kappa_warm,
+                   composition_cold=composition_cold, composition_hot=composition_hot, composition_warm=composition_warm,
+                   dust_type=dust_type, radius=radius, add_sigma=add_sigma)
 
     if plots_corner:
         plot_corner(object_name, samples_crop, results, n_components, output_dir=output_dir)
 
     if plots_trace:
         # Plot trace for each parameter
-        params = list(results.keys())[:-1]
+        if add_sigma:
+            params = list(results.keys())[:-2] + [list(results.keys())[-1]]
+        else:
+            params = list(results.keys())[:-1]
         for i, param in enumerate(params):
             is_log = False
             plot_trace(sampler.chain[:, :, i],
@@ -1246,7 +1612,7 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
                    results_1, results_2, composition1='carbon', composition2='carbon', grain_size=0.1,
                    obs_wave_filters=None, obs_trans_filters=None, fig_size=(8, 6),
                    output_dir='.', plot_comparison=True, composition_hot=None, composition_cold=None,
-                   dust_type='thin', radius=None):
+                   composition_warm=None, dust_type='thin', radius=None, add_sigma=True):
     """
     Compare 1-component vs 2-component dust models.
 
@@ -1290,6 +1656,10 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
         Composition of the cold dust component (if n_components=2)
     dust_type : str, default 'thin'
         Type of dust emission ('thin' for optically thin, 'thick' for optically thick).
+    radius : float, optional
+        Radius of the dust grains in microns (if applicable).
+    add_sigma : bool, default True
+        If True, add an additional variance to the uncertainties defined by the sigma parameter.
 
     Returns
     -------
@@ -1311,13 +1681,16 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
     log_like_1 = log_likelihood(best_params_1, obs_wave, obs_flux, obs_flux_err, obs_limits,
                                 kappa_interp_1, redshift, distance, radius, n_components=1,
                                 obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters,
-                                kappa_interp_hot=None, kappa_interp_cold=None, dust_type=dust_type)
+                                kappa_interp_hot=None, kappa_interp_cold=None, kappa_interp_warm=None,
+                                dust_type=dust_type, add_sigma=add_sigma)
 
     # Calculate likelihood for the second model
     if composition_cold is None:
         composition_cold = composition2
     if composition_hot is None:
         composition_hot = composition2
+    if composition_warm is None:
+        composition_warm = composition2
 
     # Interpolate cold component
     wave_kappa_2_cold, kappa_2_cold = import_coefficients(grain_size=grain_size, composition=composition_cold,
@@ -1331,13 +1704,19 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
     obs_wave_rest_2_hot = obs_wave / (1 + redshift)
     kappa_interp_hot = interpolate_kappa(wave_kappa_2_hot, kappa_2_hot, obs_wave_rest_2_hot)
 
+    # Interpolate warm component
+    wave_kappa_2_warm, kappa_2_warm = import_coefficients(grain_size=grain_size, composition=composition_warm,
+                                                          interp_grain=False)
+    obs_wave_rest_2_warm = obs_wave / (1 + redshift)
+    kappa_interp_warm = interpolate_kappa(wave_kappa_2_warm, kappa_2_warm, obs_wave_rest_2_warm)
+
     # Get the best parameters for the second model
     best_params_2 = [results_2[key][0] for key in results_2.keys()][:-1]
     log_like_2 = log_likelihood(best_params_2, obs_wave, obs_flux, obs_flux_err, obs_limits,
                                 kappa_interp_hot, redshift, distance, radius, n_components=2,
                                 obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters,
                                 kappa_interp_hot=kappa_interp_hot, kappa_interp_cold=kappa_interp_cold,
-                                dust_type=dust_type)
+                                kappa_interp_warm=kappa_interp_warm, dust_type=dust_type, add_sigma=add_sigma)
 
     # Calculate AIC and BIC
     n_data = len(obs_flux)
@@ -1456,7 +1835,8 @@ def full_model(filename, object_name, redshift, n_steps, n_walkers, composition=
                grain_size=0.1, n_cores=1, sigma_clip=2, repeats=3, emcee_progress=True,
                plot=False, plots_model=False, plots_corner=False, plots_trace=False, output_dir='.',
                burn_in=0.75, n_filter_samples=1000, initial_pos=None, priors=None, composition_hot=None,
-               composition_cold=None, dust_type='thin', radius=None, flat_prior=True):
+               composition_cold=None, composition_warm=None, dust_type='thin', radius=None,
+               flat_prior=True, add_sigma=True):
     """
     Run the full model fitting process.
 
@@ -1506,12 +1886,16 @@ def full_model(filename, object_name, redshift, n_steps, n_walkers, composition=
         Composition of the hot dust component (if n_components=2)
     composition_cold : str, optional
         Composition of the cold dust component (if n_components=2)
+    composition_warm : str, optional
+        Composition of the warm dust component (if n_components=3)
     dust_type : str, default 'thin'
         Type of dust emission ('thin' for optically thin, 'thick' for optically thick).
     radius : float, optional
         Radius of the dust grains in microns (if applicable).
     flat_prior : bool, default True
         If True, use a flat prior on the parameters.
+    add_sigma : bool, default True
+        If True, add an additional variance to the uncertainties defined by the sigma parameter.
 
     Returns
     -------
@@ -1522,26 +1906,37 @@ def full_model(filename, object_name, redshift, n_steps, n_walkers, composition=
     # Import data from file
     obs_wave, obs_flux, obs_flux_err, obs_limits, obs_filters, obs_wave_filters, obs_trans_filters = import_data(filename)
 
-    # Fit both models
+    # Fit all models
+    results_3, last_samples_3 = fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name,
+                                               composition=composition, grain_size=grain_size, n_components=3, n_walkers=n_walkers,
+                                               n_steps=n_steps, burn_in=burn_in, n_cores=n_cores, sigma_clip=sigma_clip, repeats=repeats,
+                                               emcee_progress=emcee_progress, obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters,
+                                               n_filter_samples=n_filter_samples, plot=plot, plots_model=plots_model, plots_corner=plots_corner,
+                                               plots_trace=plots_trace, output_dir=output_dir, initial_pos=initial_pos, composition_hot=composition_hot,
+                                               composition_cold=composition_cold, composition_warm=composition_warm, dust_type=dust_type, radius=radius,
+                                               flat_prior=flat_prior, priors=priors, add_sigma=add_sigma)
+
     results_2, last_samples_2 = fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name,
                                                composition=composition, grain_size=grain_size, n_components=2, n_walkers=n_walkers,
                                                n_steps=n_steps, burn_in=burn_in, n_cores=n_cores, sigma_clip=sigma_clip, repeats=repeats,
                                                emcee_progress=emcee_progress, obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters,
                                                n_filter_samples=n_filter_samples, plot=plot, plots_model=plots_model, plots_corner=plots_corner,
                                                plots_trace=plots_trace, output_dir=output_dir, initial_pos=initial_pos, composition_hot=composition_hot,
-                                               composition_cold=composition_cold, dust_type=dust_type, radius=radius, flat_prior=flat_prior, priors=priors)
+                                               composition_cold=composition_cold, dust_type=dust_type, radius=radius, flat_prior=flat_prior, priors=priors,
+                                               add_sigma=add_sigma)
 
     results_1, last_samples_1 = fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name,
                                                composition=composition, grain_size=grain_size, n_components=1, n_walkers=n_walkers, n_steps=n_steps,
                                                burn_in=burn_in, n_cores=n_cores, sigma_clip=sigma_clip, repeats=repeats, emcee_progress=emcee_progress,
                                                obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters, n_filter_samples=n_filter_samples,
                                                plot=plot, plots_model=plots_model, plots_corner=plots_corner, plots_trace=plots_trace, output_dir=output_dir,
-                                               initial_pos=initial_pos, dust_type=dust_type, radius=radius, flat_prior=flat_prior, priors=priors)
+                                               initial_pos=initial_pos, dust_type=dust_type, radius=radius, flat_prior=flat_prior, priors=priors,
+                                               add_sigma=add_sigma)
 
     results = compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name,
                              results_1, results_2, composition1=composition, composition2=composition, grain_size=grain_size,
                              obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters, output_dir=output_dir,
                              plot_comparison=plot, composition_hot=composition_hot, composition_cold=composition_cold,
-                             dust_type=dust_type, radius=radius)
+                             dust_type=dust_type, radius=radius, add_sigma=add_sigma)
 
     return results

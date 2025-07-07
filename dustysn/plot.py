@@ -30,13 +30,24 @@ def plot_corner(object_name, samples_crop, results, n_components, output_dir='.'
 
     # Define parameter labels based on number of components
     if n_components == 1:
-        labels = [r"$\log(M/M_\odot)$", r"$T$ [K]"]
+        labels = [r"$\log(M/M_\odot)$", r"$T$ [K]", r"$\sigma$"]
     elif n_components == 2:
         labels = [
             r"$\log(M_{\rm cold}/M_\odot)$",
             r"$T_{\rm cold}$ [K]",
             r"$\log(M_{\rm hot}/M_\odot)$",
-            r"$T_{\rm hot}$ [K]"
+            r"$T_{\rm hot}$ [K]",
+            r"$\sigma$"
+        ]
+    elif n_components == 3:
+        labels = [
+            r"$\log(M_{\rm cold}/M_\odot)$",
+            r"$T_{\rm cold}$ [K]",
+            r"$\log(M_{\rm hot}/M_\odot)$",
+            r"$T_{\rm hot}$ [K]",
+            r"$\log(M_{\rm warm}/M_\odot)$",
+            r"$T_{\rm warm}$ [K]",
+            r"$\sigma$"
         ]
     else:
         # For any other number of components, generate generic labels
