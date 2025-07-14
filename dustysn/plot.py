@@ -171,26 +171,14 @@ def plot_trace(param_chain, param_values, param_values_log, min_val, max_val,
             else:
                 # Just one run, so extract post burn-in samples directly
                 post_burn_chains = param_chain[:, int(n_steps * burn_in):]
-                # Add a dimension for consistency with multiple repeats case
-                post_burn_chains = post_burn_chains.reshape(n_walkers, 1, -1)
-
-                half = n_walkers // 2
-                # Use the second half of the burn-in period for more stable chains
-                chains_group1 = post_burn_chains[:half, 0, :]  # First half of walkers
-                chains_group2 = post_burn_chains[half:, 0, :]  # Second half of walkers
 
                 try:
-                    # Compute R-hat between these two groups
-                    combined_chains = np.vstack([
-                        np.mean(chains_group1, axis=0, keepdims=True),
-                        np.mean(chains_group2, axis=0, keepdims=True)
-                    ])
-                    rhat = compute_rhat(combined_chains)
+                    rhat = compute_rhat(post_burn_chains)
                     ax0.text(0.65, 0.05, r'$\hat{{R}}$ = {:.3f}'.format(rhat),
                              transform=ax0.transAxes,
                              bbox=dict(facecolor='white', alpha=0.7))
                 except Exception:
-                    ax0.text(0.65, 0.05, r'$\hat{{R}}$ calculation failed',
+                    ax0.text(0.65, 0.05, r'$\hat{{R}}$ NaN',
                              transform=ax0.transAxes,
                              bbox=dict(facecolor='white', alpha=0.7))
         except Exception as e:

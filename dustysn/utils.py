@@ -287,14 +287,14 @@ def import_data(filename, data_dir=data_dir):
     return obs_wave, obs_flux, obs_flux_err, obs_limits, obs_filters, obs_wave_filters, obs_trans_filters
 
 
-def compute_rhat(chains):
+def compute_rhat(param_chain):
     """
-    Calculate Gelman-Rubin R-hat statistic across multiple independent MCMC chains.
+    Compute the Gelman-Rubin R-hat statistic for a parameter chain from emcee.
 
     Parameters
     ----------
-    chains : ndarray
-        Array of shape (n_chains, n_samples), each row is one independent chain.
+    param_chain : ndarray
+        2D array of shape (n_walkers, n_steps) for a given parameter.
 
     Returns
     -------
@@ -302,26 +302,22 @@ def compute_rhat(chains):
         Gelman-Rubin R-hat statistic.
     """
 
-    n_chains, n_samples = chains.shape
+    n_walkers, n_steps = param_chain.shape
 
-    if n_chains < 2:
-        return np.nan
+    # Compute mean and variance for each walker
+    walker_means = np.mean(param_chain, axis=1)
+    walker_vars = np.var(param_chain, axis=1, ddof=1)
 
-    # Calculate within-chain variances
-    chain_means = np.mean(chains, axis=1)
-    chain_vars = np.var(chains, axis=1, ddof=1)
+    # Between-chain variance B (multiplied by n_steps)
+    B = n_steps * np.var(walker_means, ddof=1)
 
-    # Calculate between-chain variance
-    grand_mean = np.mean(chain_means)
-    B = n_samples * np.sum((chain_means - grand_mean)**2) / (n_chains - 1)
-
-    # Calculate within-chain variance
-    W = np.mean(chain_vars)
+    # Within-chain variance W
+    W = np.mean(walker_vars)
 
     # Estimate of marginal posterior variance
-    var_hat = ((n_samples - 1) / n_samples) * W + (B / n_samples)
+    var_hat = (1 - 1/n_steps) * W + B/n_steps
 
-    # Calculate potential scale reduction factor
+    # R-hat statistic
     if W > 0:
         R_hat = np.sqrt(var_hat / W)
     else:

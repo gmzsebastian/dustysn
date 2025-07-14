@@ -444,7 +444,7 @@ def log_likelihood(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
     return ln_like
 
 
-def log_prior(theta, priors, n_components=1, flat_prior=True,
+def log_prior(theta, priors, n_components=1, flat_mass_prior=True,
               mu_mass=-1.0, sigma_mass=1.0, add_sigma=True):
     """
     Calculate the log-prior for the model parameters.
@@ -458,7 +458,7 @@ def log_prior(theta, priors, n_components=1, flat_prior=True,
         Dictionary containing prior bounds for the parameters.
     n_components : int
         Number of dust components (1 or 2)
-    flat_prior : bool, default True
+    flat_mass_prior : bool, default True
         If True, use a flat prior on the parameters.
         If False, use a Gaussian prior on the total dust mass.
     mu_mass : float, default -1.0
@@ -496,7 +496,7 @@ def log_prior(theta, priors, n_components=1, flat_prior=True,
                 min_sigma < sigma < max_sigma):
             # Apply Gaussian prior on total dust mass
             mass_prior = -0.5 * ((log_total_mass - mu_mass) / sigma_mass)**2
-            if flat_prior:
+            if flat_mass_prior:
                 return -np.log(10 ** sigma)
             else:
                 return -np.log(10 ** sigma) + mass_prior
@@ -520,7 +520,7 @@ def log_prior(theta, priors, n_components=1, flat_prior=True,
             if temp_hot > temp_cold:
                 # Apply Gaussian prior on total dust mass
                 mass_prior = -0.5 * ((log_total_mass - mu_mass) / sigma_mass)**2
-                if flat_prior:
+                if flat_mass_prior:
                     return -np.log(10 ** sigma)
                 else:
                     return -np.log(10 ** sigma) + mass_prior
@@ -548,7 +548,7 @@ def log_prior(theta, priors, n_components=1, flat_prior=True,
             if temp_hot > temp_cold and temp_warm > temp_cold and temp_hot > temp_warm:
                 # Apply Gaussian prior on total dust mass
                 mass_prior = -0.5 * ((log_total_mass - mu_mass) / sigma_mass)**2
-                if flat_prior:
+                if flat_mass_prior:
                     return -np.log(10 ** sigma)
                 else:
                     return -np.log(10 ** sigma) + mass_prior
@@ -566,7 +566,7 @@ def log_probability(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
                     obs_wave_filters=None, obs_trans_filters=None,
                     kappa_interp_hot=None, kappa_interp_cold=None,
                     kappa_interp_warm=None, dust_type='thin',
-                    flat_prior=True, priors=None, add_sigma=True):
+                    flat_mass_prior=True, priors=None, add_sigma=True):
     """
     Calculate the log-probability of the model given the observed data.
 
@@ -605,7 +605,7 @@ def log_probability(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
         Pre-interpolated dust opacity data for the warm component in cm^2/g.
     dust_type : str, default 'thin'
         Type of dust emission ('thin' for optically thin, 'thick' for optically thick).
-    flat_prior : bool, default True
+    flat_mass_prior : bool, default True
         If True, use a flat prior on the parameters.
     priors : dict, optional
         Dictionary containing prior bounds for the parameters.
@@ -620,7 +620,7 @@ def log_probability(theta, obs_wave, obs_flux, obs_flux_err, obs_limits,
     """
 
     # First check the prior
-    lp = log_prior(theta, priors, n_components, flat_prior, add_sigma=add_sigma)
+    lp = log_prior(theta, priors, n_components, flat_mass_prior, add_sigma=add_sigma)
     if not np.isfinite(lp):
         return -np.inf
 
@@ -906,28 +906,36 @@ def plot_model(object_name, last_samples, results, obs_wave, obs_flux, obs_flux_
         extra_label = ("\n" + r"$T = "
                        f"{results['temp_cold'][0]:.0f}"
                        r"^{+" + f"{results['temp_cold'][1]:.0f}" + r"}"
-                       r"_{-" + f"{results['temp_cold'][2]:.0f}" + r"} \, {\rm K}$")
+                       r"_{-" + f"{results['temp_cold'][2]:.0f}" + r"} \, {\rm K}$"
+                       "\n"
+                       f"({dust_type} {composition_cold} dust)")
     else:
         extra_label = ''
 
     if total_M < 1e-2:
         total_label = (
-            r"Best fit = $"
-            f"{total_M:.1e}"
+            r"Best fit"
+            "\n"
+            f"$M = {total_M:.1e}"
             r"^{+" + f"{results['total_dust_mass'][1]:.1e}" + r"}"
             r"_{-" + f"{results['total_dust_mass'][2]:.1e}" + r"} \, M_\odot$" +
             extra_label
         )
     else:
         total_label = (
-            r"Best fit = $"
-            f"{total_M:.2f}"
+            r"Best fit"
+            "\n"
+            f"$M = {total_M:.2f}"
             r"^{+" + f"{results['total_dust_mass'][1]:.2f}" + r"}"
             r"_{-" + f"{results['total_dust_mass'][2]:.2f}" + r"} \, M_\odot$" +
             extra_label
         )
     plt.plot(wave_dense.value, model_dense.value, 'g', linestyle='-', alpha=0.9, linewidth=2, zorder=1,
              label=total_label)
+
+    # Plot title with name, redshift, and distance in Mpc
+    distance_mpc = distance.to(u.Mpc).value
+    plt.title(f"{object_name} " + r"$-$" + f" z = {redshift} ({distance_mpc:.2f} Mpc)")
 
     # Plot individual components for two-component model
     if n_components == 2:
@@ -1199,13 +1207,13 @@ def plot_model(object_name, last_samples, results, obs_wave, obs_flux, obs_flux_
     plt.close('all')
 
 
-def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name,
-                   composition='carbon', grain_size=0.1, n_components=1, n_walkers=32,
-                   n_steps=1000, burn_in=0.75, n_cores=1, sigma_clip=2, repeats=3, emcee_progress=True,
-                   obs_wave_filters=None, obs_trans_filters=None, n_filter_samples=1000, plot=False, plots_model=False,
-                   plots_corner=False, plots_trace=False, output_dir='.', initial_pos=None, composition_hot=None,
-                   composition_cold=None, composition_warm=None, dust_type='thin', radius=None, flat_prior=True, priors=None,
-                   add_sigma=True):
+def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name, composition='carbon',
+                   grain_size=0.1, n_components=1, n_walkers=50, n_steps=1000, burn_in=0.75, n_cores=1,
+                   sigma_clip=2, repeats=3, emcee_progress=True, obs_wave_filters=None, obs_trans_filters=None,
+                   n_filter_samples=1000, plot=False, plots_model=False, plots_corner=False, plots_trace=False,
+                   output_dir='.', initial_pos=None, priors=None, composition_hot=None, composition_cold=None,
+                   composition_warm=None, dust_type='thin', radius=None, flat_mass_prior=True, add_sigma=True,
+                   distance=None):
     """
     Run MCMC sampler without multiprocessing.
 
@@ -1221,6 +1229,8 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
         Boolean array indicating upper limits
     redshift : float
         Redshift of the object
+    object_name : str
+        Name of the object being fitted
     composition : str, default 'carbon'
         Composition of the dust (e.g., 'carbon', 'silicate')
     grain_size : float, default 0.1
@@ -1259,20 +1269,24 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
         Directory to save the plots and parameter files
     initial_pos : dict
         Initial positions for the walkers. If None, priors will be used to generate them.
+    priors : dict, optional
+        Dictionary with prior bounds for the parameters. If None, default priors will be used.
     composition_hot : str, optional
         Composition of the hot dust component (if n_components=2)
     composition_cold : str, optional
         Composition of the cold dust component (if n_components=2)
+    composition_warm : str, optional
+        Composition of the warm dust component (if n_components=3)
     dust_type : str, default 'thin'
         Type of dust emission ('thin' for optically thin, 'thick' for optically thick).
     radius : float, optional
         Radius of the dust grains in microns (if applicable).
-    flat_prior : bool, default True
-        If True, use a flat prior on the parameters.
-    priors : dict, optional
-        Dictionary with prior bounds for the parameters. If None, default priors will be used.
+    flat_mass_prior : bool, default True
+        If True, use a flat prior on the dust mass.
     add_sigma : bool, default True
         If True, add an additional variance to the uncertainties defined by the sigma parameter.
+    distance : Quantity, optional
+        Luminosity distance in astropy units. If None, it will be calculated from the redshift
 
     Returns
     -------
@@ -1285,7 +1299,12 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
     np.random.seed(42)
 
     # Calculate the distance in cm
-    distance = calc_distance(redshift)
+    if distance is None:
+        distance = calc_distance(redshift)
+    elif isinstance(distance, u.Quantity):
+        distance = distance.to(u.cm).value
+    else:
+        raise ValueError(f"distance must be an astropy Quantity or None, not {type(distance)}")
 
     # If composition_hot or composition_cold are not provided, use the same as composition
     if composition_cold is None:
@@ -1339,9 +1358,9 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
                                                    initial_pos['log_dust_mass_cold'][1], n_walkers)
             temp_cold = np.random.uniform(initial_pos['temp_cold'][0],
                                           initial_pos['temp_cold'][1], n_walkers)
-            log_sigma = np.random.uniform(initial_pos['sigma'][0],
-                                          initial_pos['sigma'][1], n_walkers)
             if add_sigma:
+                log_sigma = np.random.uniform(initial_pos['sigma'][0],
+                                              initial_pos['sigma'][1], n_walkers)
                 pos = np.array([log_dust_mass_cold, temp_cold, log_sigma]).T
             else:
                 pos = np.array([log_dust_mass_cold, temp_cold]).T
@@ -1355,9 +1374,9 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
                                                   initial_pos['log_dust_mass_hot'][1], n_walkers)
             temp_hot = np.random.uniform(initial_pos['temp_hot'][0],
                                          initial_pos['temp_hot'][1], n_walkers)
-            log_sigma = np.random.uniform(initial_pos['sigma'][0],
-                                          initial_pos['sigma'][1], n_walkers)
             if add_sigma:
+                log_sigma = np.random.uniform(initial_pos['sigma'][0],
+                                              initial_pos['sigma'][1], n_walkers)
                 pos = np.array([log_dust_mass_cold, temp_cold, log_dust_mass_hot,
                                 temp_hot, log_sigma]).T
             else:
@@ -1377,9 +1396,9 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
                                                    initial_pos['log_dust_mass_warm'][1], n_walkers)
             temp_warm = np.random.uniform(initial_pos['temp_warm'][0],
                                           initial_pos['temp_warm'][1], n_walkers)
-            log_sigma = np.random.uniform(initial_pos['sigma'][0],
-                                          initial_pos['sigma'][1], n_walkers)
             if add_sigma:
+                log_sigma = np.random.uniform(initial_pos['sigma'][0],
+                                              initial_pos['sigma'][1], n_walkers)
                 pos = np.array([log_dust_mass_cold, temp_cold, log_dust_mass_hot, temp_hot,
                                 log_dust_mass_warm, temp_warm, log_sigma]).T
             else:
@@ -1411,7 +1430,7 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
     # Set up arguments for the log-probability function
     args = (obs_wave_samples, obs_flux, obs_flux_err, obs_limits, kappa_interp, redshift, distance, radius,
             n_components, obs_wave_filters, obs_trans_filters, kappa_interp_hot, kappa_interp_cold, kappa_interp_warm, dust_type,
-            flat_prior, priors, add_sigma)
+            flat_mass_prior, priors, add_sigma)
 
     # Run MCMC without multiprocessing
     n_dim = pos.shape[1]
@@ -1612,7 +1631,7 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
                    results_1, results_2, composition1='carbon', composition2='carbon', grain_size=0.1,
                    obs_wave_filters=None, obs_trans_filters=None, fig_size=(8, 6),
                    output_dir='.', plot_comparison=True, composition_hot=None, composition_cold=None,
-                   composition_warm=None, dust_type='thin', radius=None, add_sigma=True):
+                   composition_warm=None, dust_type='thin', radius=None, add_sigma=True, distance=None):
     """
     Compare 1-component vs 2-component dust models.
 
@@ -1660,6 +1679,8 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
         Radius of the dust grains in microns (if applicable).
     add_sigma : bool, default True
         If True, add an additional variance to the uncertainties defined by the sigma parameter.
+    distance : Quantity, optional
+        Luminosity distance in astropy units. If None, it will be calculated from the redshift.
 
     Returns
     -------
@@ -1668,7 +1689,12 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
     """
 
     # Calculate the distance in cm
-    distance = calc_distance(redshift)
+    if distance is None:
+        distance = calc_distance(redshift)
+    elif isinstance(distance, u.Quantity):
+        distance = distance.to(u.cm).value
+    else:
+        raise ValueError(f"distance must be an astropy Quantity or None, not {type(distance)}")
 
     # Calculate likelihood for the first model
     wave_kappa_1, kappa_1 = import_coefficients(grain_size=grain_size, composition=composition1,
@@ -1831,12 +1857,11 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
     }
 
 
-def full_model(filename, object_name, redshift, n_steps, n_walkers, composition='carbon',
-               grain_size=0.1, n_cores=1, sigma_clip=2, repeats=3, emcee_progress=True,
-               plot=False, plots_model=False, plots_corner=False, plots_trace=False, output_dir='.',
-               burn_in=0.75, n_filter_samples=1000, initial_pos=None, priors=None, composition_hot=None,
-               composition_cold=None, composition_warm=None, dust_type='thin', radius=None,
-               flat_prior=True, add_sigma=True):
+def full_model(filename, object_name, redshift, composition='carbon', grain_size=0.1, n_walkers=50, n_steps=1000, burn_in=0.75,
+               n_cores=1, sigma_clip=2, repeats=3, emcee_progress=True, n_filter_samples=1000, plot=False, plots_model=False,
+               plots_corner=False, plots_trace=False, output_dir='.', initial_pos=None, priors=None, composition_hot=None,
+               composition_cold=None, composition_warm=None, dust_type='thin', radius=None, flat_mass_prior=True, add_sigma=True,
+               distance=None):
     """
     Run the full model fitting process.
 
@@ -1848,40 +1873,40 @@ def full_model(filename, object_name, redshift, n_steps, n_walkers, composition=
         Name of the object being fitted
     redshift : float
         Redshift of the object
-    n_steps : int
-        Number of steps for each MCMC run
-    n_walkers : int
-        Number of walkers
     composition : str, default 'carbon'
-        Composition of the dust (e.g., 'carbon', 'silicate')
+        Composition of the dust
     grain_size : float, default 0.1
         Grain size in microns
-    n_cores : int, default 1
-        Number of threads for multiprocessing
-    sigma_clip : float, default 2.0
-        Number of sigma to clip walkers at between runs
-    repeats : int, default 3
-        Number of times to repeat the MCMC process with sigma clipping
-    emcee_progress : bool, default True
-        Whether to display progress bar during MCMC sampling
-    plot : bool, default True
-        Whether to plot and save all the diagnosis plots
-    plots_model : bool
-        Plot model
-    plots_corner : bool
-        Plot corner plot
-    plots_trace : bool
-        Plot traces for parmeters
-    output_dir : str, default '.'
-        Directory to save the plots and parameter files
+    n_walkers : int, default 50
+        Number of walkers for the MCMC sampling
+    n_steps : int, default 1000
+        Number of steps for each walker in the MCMC sampling
     burn_in : float, default 0.75
         Fraction of steps to discard as burn-in
+    n_cores : int, default 1
+        Number of CPU cores to use for parallel processing
+    sigma_clip : float, default 2
+        Sigma clipping threshold for outlier rejection
+    repeats : int, default 3
+        Number of times to repeat the MCMC sampling
+    emcee_progress : bool, default True
+        Whether to show a progress bar during MCMC sampling
     n_filter_samples : int, default 1000
-        Number of samples to draw for the filter wavelengths
-    initial_pos : dict, default None
-        Initial positions for the walkers. If None, priors will be used to generate them.
-    priors : dict, default None
-        Dictionary containing prior ranges for the parameters.
+        Number of samples for filter interpolation
+    plot : bool, default False
+        Whether to create plots of the results
+    plots_model : bool, default False
+        Whether to plot the model fits
+    plots_corner : bool, default False
+        Whether to create corner plots of the parameter distributions
+    plots_trace : bool, default False
+        Whether to plot the trace of the MCMC sampling
+    output_dir : str, default '.'
+        Directory to save the output files and plots
+    initial_pos : dict, optional
+        Initial positions for the walkers in the MCMC sampling
+    priors : dict, optional
+        Priors for the parameters in the MCMC sampling
     composition_hot : str, optional
         Composition of the hot dust component (if n_components=2)
     composition_cold : str, optional
@@ -1892,10 +1917,12 @@ def full_model(filename, object_name, redshift, n_steps, n_walkers, composition=
         Type of dust emission ('thin' for optically thin, 'thick' for optically thick).
     radius : float, optional
         Radius of the dust grains in microns (if applicable).
-    flat_prior : bool, default True
-        If True, use a flat prior on the parameters.
+    flat_mass_prior : bool, default True
+        If True, use a flat prior for the dust mass.
     add_sigma : bool, default True
         If True, add an additional variance to the uncertainties defined by the sigma parameter.
+    distance : Quantity, optional
+        Luminosity distance in astropy units. If None, it will be calculated from the redshift.
 
     Returns
     -------
@@ -1906,37 +1933,45 @@ def full_model(filename, object_name, redshift, n_steps, n_walkers, composition=
     # Import data from file
     obs_wave, obs_flux, obs_flux_err, obs_limits, obs_filters, obs_wave_filters, obs_trans_filters = import_data(filename)
 
+    # Specific dust composition for each component
+    if composition_hot is None:
+        composition_hot = composition
+    if composition_cold is None:
+        composition_cold = composition
+    if composition_warm is None:
+        composition_warm = composition
+
     # Fit all models
-    results_3, last_samples_3 = fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name,
-                                               composition=composition, grain_size=grain_size, n_components=3, n_walkers=n_walkers,
-                                               n_steps=n_steps, burn_in=burn_in, n_cores=n_cores, sigma_clip=sigma_clip, repeats=repeats,
-                                               emcee_progress=emcee_progress, obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters,
-                                               n_filter_samples=n_filter_samples, plot=plot, plots_model=plots_model, plots_corner=plots_corner,
-                                               plots_trace=plots_trace, output_dir=output_dir, initial_pos=initial_pos, composition_hot=composition_hot,
-                                               composition_cold=composition_cold, composition_warm=composition_warm, dust_type=dust_type, radius=radius,
-                                               flat_prior=flat_prior, priors=priors, add_sigma=add_sigma)
-
-    results_2, last_samples_2 = fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name,
-                                               composition=composition, grain_size=grain_size, n_components=2, n_walkers=n_walkers,
-                                               n_steps=n_steps, burn_in=burn_in, n_cores=n_cores, sigma_clip=sigma_clip, repeats=repeats,
-                                               emcee_progress=emcee_progress, obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters,
-                                               n_filter_samples=n_filter_samples, plot=plot, plots_model=plots_model, plots_corner=plots_corner,
-                                               plots_trace=plots_trace, output_dir=output_dir, initial_pos=initial_pos, composition_hot=composition_hot,
-                                               composition_cold=composition_cold, dust_type=dust_type, radius=radius, flat_prior=flat_prior, priors=priors,
-                                               add_sigma=add_sigma)
-
-    results_1, last_samples_1 = fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name,
-                                               composition=composition, grain_size=grain_size, n_components=1, n_walkers=n_walkers, n_steps=n_steps,
-                                               burn_in=burn_in, n_cores=n_cores, sigma_clip=sigma_clip, repeats=repeats, emcee_progress=emcee_progress,
+    results_3, last_samples_3 = fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name, composition=composition,
+                                               grain_size=grain_size, n_components=3, n_walkers=n_walkers, n_steps=n_steps, burn_in=burn_in,
+                                               n_cores=n_cores, sigma_clip=sigma_clip, repeats=repeats, emcee_progress=emcee_progress,
                                                obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters, n_filter_samples=n_filter_samples,
                                                plot=plot, plots_model=plots_model, plots_corner=plots_corner, plots_trace=plots_trace, output_dir=output_dir,
-                                               initial_pos=initial_pos, dust_type=dust_type, radius=radius, flat_prior=flat_prior, priors=priors,
-                                               add_sigma=add_sigma)
+                                               initial_pos=initial_pos, priors=priors, composition_hot=composition_hot, composition_cold=composition_cold,
+                                               composition_warm=composition_warm, dust_type=dust_type, radius=radius, flat_mass_prior=flat_mass_prior,
+                                               add_sigma=add_sigma, distance=distance)
 
-    results = compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name,
-                             results_1, results_2, composition1=composition, composition2=composition, grain_size=grain_size,
-                             obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters, output_dir=output_dir,
-                             plot_comparison=plot, composition_hot=composition_hot, composition_cold=composition_cold,
-                             dust_type=dust_type, radius=radius, add_sigma=add_sigma)
+    results_2, last_samples_2 = fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name, composition=composition,
+                                               grain_size=grain_size, n_components=2, n_walkers=n_walkers, n_steps=n_steps, burn_in=burn_in,
+                                               n_cores=n_cores, sigma_clip=sigma_clip, repeats=repeats, emcee_progress=emcee_progress,
+                                               obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters, n_filter_samples=n_filter_samples,
+                                               plot=plot, plots_model=plots_model, plots_corner=plots_corner, plots_trace=plots_trace, output_dir=output_dir,
+                                               initial_pos=initial_pos, priors=priors, composition_hot=composition_hot, composition_cold=composition_cold,
+                                               dust_type=dust_type, radius=radius, flat_mass_prior=flat_mass_prior, add_sigma=add_sigma, distance=distance)
 
-    return results
+    results_1, last_samples_1 = fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name, composition=composition_cold,
+                                               grain_size=grain_size, n_components=1, n_walkers=n_walkers, n_steps=n_steps, burn_in=burn_in,
+                                               n_cores=n_cores, sigma_clip=sigma_clip, repeats=repeats, emcee_progress=emcee_progress,
+                                               obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters, n_filter_samples=n_filter_samples,
+                                               plot=plot, plots_model=plots_model, plots_corner=plots_corner, plots_trace=plots_trace, output_dir=output_dir,
+                                               initial_pos=initial_pos, priors=priors, dust_type=dust_type, radius=radius, flat_mass_prior=flat_mass_prior,
+                                               add_sigma=add_sigma, distance=distance)
+
+    if False:
+        results = compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name,
+                                results_1, results_2, composition1=composition, composition2=composition, grain_size=grain_size,
+                                obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters, output_dir=output_dir,
+                                plot_comparison=plot, composition_hot=composition_hot, composition_cold=composition_cold,
+                                dust_type=dust_type, radius=radius, add_sigma=add_sigma, distance=distance)
+
+        return results
