@@ -1627,13 +1627,12 @@ def fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
     return results, last_samples
 
 
-def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name,
-                   results_1, results_2, composition1='carbon', composition2='carbon', grain_size=0.1,
-                   obs_wave_filters=None, obs_trans_filters=None, fig_size=(8, 6),
+def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name, results_1, results_2,
+                   results_3, grain_size=0.1, obs_wave_filters=None, obs_trans_filters=None, fig_size=(8, 6),
                    output_dir='.', plot_comparison=True, composition_hot=None, composition_cold=None,
                    composition_warm=None, dust_type='thin', radius=None, add_sigma=True, distance=None):
     """
-    Compare 1-component vs 2-component dust models.
+    Compare 1-component, 2-component, and 3-component dust models.
 
     Parameters
     ----------
@@ -1653,10 +1652,8 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
         Dictionary with the results of the 1-component MCMC fit
     results_2 : dict
         Dictionary with the results of the 2-component MCMC fit
-    composition1 : str, default 'carbon'
-        Composition of the dust for the 1-component model
-    composition2 : str, default 'carbon'
-        Composition of the dust for the 2-component model
+    results_3 : dict
+        Dictionary with the results of the 3-component MCMC fit
     grain_size : float, default 0.1
         Grain size in microns
     obs_wave_filters : list of arrays
@@ -1673,6 +1670,8 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
         Composition of the hot dust component (if n_components=2)
     composition_cold : str, optional
         Composition of the cold dust component (if n_components=2)
+    composition_warm : str, optional
+        Composition of the warm dust component (if n_components=3)
     dust_type : str, default 'thin'
         Type of dust emission ('thin' for optically thin, 'thick' for optically thick).
     radius : float, optional
@@ -1681,6 +1680,8 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
         If True, add an additional variance to the uncertainties defined by the sigma parameter.
     distance : Quantity, optional
         Luminosity distance in astropy units. If None, it will be calculated from the redshift.
+    add_sigma : bool, default True
+        If True, add an additional variance to the uncertainties defined by the sigma parameter.
 
     Returns
     -------
@@ -1696,45 +1697,31 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
     else:
         raise ValueError(f"distance must be an astropy Quantity or None, not {type(distance)}")
 
-    # Calculate likelihood for the first model
-    wave_kappa_1, kappa_1 = import_coefficients(grain_size=grain_size, composition=composition1,
-                                                interp_grain=False)
-    obs_wave_rest_1 = obs_wave / (1 + redshift)
-    kappa_interp_1 = interpolate_kappa(wave_kappa_1, kappa_1, obs_wave_rest_1)
+    # Interpolate kappa for the cold component (1 component model)
+    wave_kappa_cold, kappa_cold = import_coefficients(grain_size=grain_size, composition=composition_cold,
+                                                      interp_grain=False)
+    obs_wave_rest_cold = obs_wave / (1 + redshift)
+    kappa_interp_cold = interpolate_kappa(wave_kappa_cold, kappa_cold, obs_wave_rest_cold)
+
+    # Interpolate kappa for the hot component (2 component model)
+    wave_kappa_hot, kappa_hot = import_coefficients(grain_size=grain_size, composition=composition_hot,
+                                                    interp_grain=False)
+    obs_wave_rest_hot = obs_wave / (1 + redshift)
+    kappa_interp_hot = interpolate_kappa(wave_kappa_hot, kappa_hot, obs_wave_rest_hot)
+
+    # Interpolate kappa for the warm component (3 component model)
+    wave_kappa_warm, kappa_warm = import_coefficients(grain_size=grain_size, composition=composition_warm,
+                                                      interp_grain=False)
+    obs_wave_rest_warm = obs_wave / (1 + redshift)
+    kappa_interp_warm = interpolate_kappa(wave_kappa_warm, kappa_warm, obs_wave_rest_warm)
 
     # Get the best parameters for the first model
     best_params_1 = [results_1[key][0] for key in results_1.keys()][:-1]
     log_like_1 = log_likelihood(best_params_1, obs_wave, obs_flux, obs_flux_err, obs_limits,
-                                kappa_interp_1, redshift, distance, radius, n_components=1,
+                                kappa_interp_cold, redshift, distance, radius, n_components=1,
                                 obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters,
                                 kappa_interp_hot=None, kappa_interp_cold=None, kappa_interp_warm=None,
                                 dust_type=dust_type, add_sigma=add_sigma)
-
-    # Calculate likelihood for the second model
-    if composition_cold is None:
-        composition_cold = composition2
-    if composition_hot is None:
-        composition_hot = composition2
-    if composition_warm is None:
-        composition_warm = composition2
-
-    # Interpolate cold component
-    wave_kappa_2_cold, kappa_2_cold = import_coefficients(grain_size=grain_size, composition=composition_cold,
-                                                          interp_grain=False)
-    obs_wave_rest_2_cold = obs_wave / (1 + redshift)
-    kappa_interp_cold = interpolate_kappa(wave_kappa_2_cold, kappa_2_cold, obs_wave_rest_2_cold)
-
-    # Interpolate hot component
-    wave_kappa_2_hot, kappa_2_hot = import_coefficients(grain_size=grain_size, composition=composition_hot,
-                                                        interp_grain=False)
-    obs_wave_rest_2_hot = obs_wave / (1 + redshift)
-    kappa_interp_hot = interpolate_kappa(wave_kappa_2_hot, kappa_2_hot, obs_wave_rest_2_hot)
-
-    # Interpolate warm component
-    wave_kappa_2_warm, kappa_2_warm = import_coefficients(grain_size=grain_size, composition=composition_warm,
-                                                          interp_grain=False)
-    obs_wave_rest_2_warm = obs_wave / (1 + redshift)
-    kappa_interp_warm = interpolate_kappa(wave_kappa_2_warm, kappa_2_warm, obs_wave_rest_2_warm)
 
     # Get the best parameters for the second model
     best_params_2 = [results_2[key][0] for key in results_2.keys()][:-1]
@@ -1744,32 +1731,27 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
                                 kappa_interp_hot=kappa_interp_hot, kappa_interp_cold=kappa_interp_cold,
                                 kappa_interp_warm=kappa_interp_warm, dust_type=dust_type, add_sigma=add_sigma)
 
+    # Get the best parameters for the third model
+    best_params_3 = [results_3[key][0] for key in results_3.keys()][:-1]
+    log_like_3 = log_likelihood(best_params_3, obs_wave, obs_flux, obs_flux_err, obs_limits,
+                                kappa_interp_hot, redshift, distance, radius, n_components=3,
+                                obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters,
+                                kappa_interp_hot=kappa_interp_hot, kappa_interp_cold=kappa_interp_cold,
+                                kappa_interp_warm=kappa_interp_warm, dust_type=dust_type, add_sigma=add_sigma)
+
     # Calculate AIC and BIC
     n_data = len(obs_flux)
     n_params_1 = len(best_params_1)  # one component with log_mass and temperature
     n_params_2 = len(best_params_2)  # two components with log_mass and temperature
+    n_params_3 = len(best_params_3)  # three components with log_mass and temperature
 
     aic_1comp = 2 * n_params_1 - 2 * log_like_1
     aic_2comp = 2 * n_params_2 - 2 * log_like_2
-    delta_aic = aic_1comp - aic_2comp
+    aic_3comp = 2 * n_params_3 - 2 * log_like_3
 
     bic_1comp = np.log(n_data) * n_params_1 - 2 * log_like_1
     bic_2comp = np.log(n_data) * n_params_2 - 2 * log_like_2
-    delta_bic = bic_1comp - bic_2comp
-
-    # Print comparison
-    print("\nModel Comparison:")
-    print(f"1-component model: Log-likelihood = {log_like_1:.2f}, AIC = {aic_1comp:.2f}, BIC = {bic_1comp:.2f}")
-    print(f"2-component model: Log-likelihood = {log_like_2:.2f}, AIC = {aic_2comp:.2f}, BIC = {bic_2comp:.2f}")
-    print(f"Delta AIC (1comp - 2comp) = {delta_aic:.2f} (positive favors 2-component model)")
-    print(f"Delta BIC (1comp - 2comp) = {delta_bic:.2f} (positive favors 2-component model)")
-
-    if delta_aic > 0 and delta_bic > 0:
-        print("Both AIC and BIC favor the 2-component model.")
-    elif delta_aic > 0 and delta_bic <= 0:
-        print("AIC favors the 2-component model, but BIC (which penalizes complexity more) favors the 1-component model.")
-    elif delta_aic <= 0 and delta_bic <= 0:
-        print("Both AIC and BIC favor the 1-component model.")
+    bic_3comp = np.log(n_data) * n_params_3 - 2 * log_like_3
 
     # Create a figure that shows both models
     if plot_comparison:
@@ -1785,23 +1767,43 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
 
         # Interpolate kappa to the fine grid's rest wavelengths
         wave_dense_rest = wave_dense / (1 + redshift)
-        kappa_dense_1 = interpolate_kappa(wave_kappa_1, kappa_1, wave_dense_rest)
-        kappa_dense_hot = interpolate_kappa(wave_kappa_2_cold, kappa_2_cold, wave_dense_rest)
-        kappa_dense_cold = interpolate_kappa(wave_kappa_2_hot, kappa_2_hot, wave_dense_rest)
+        kappa_dense_cold = interpolate_kappa(wave_kappa_cold, kappa_cold, wave_dense_rest)
+        kappa_dense_hot = interpolate_kappa(wave_kappa_hot, kappa_hot, wave_dense_rest)
+        kappa_dense_warm = interpolate_kappa(wave_kappa_warm, kappa_warm, wave_dense_rest)
 
         # Plot 1-component model
-        model_1comp = model_flux(best_params_1, wave_dense, obs_flux, kappa_dense_1,
+        if add_sigma:
+            best_params_1_use = best_params_1[:-1]
+        else:
+            best_params_1_use = best_params_1
+        model_1comp = model_flux(best_params_1_use, wave_dense, obs_flux, kappa_dense_cold,
                                  redshift, distance, radius, n_components=1, dust_type=dust_type)
         plt.plot(wave_dense.value, model_1comp.value, 'b-', linewidth=2,
-                 label='1-component', alpha=0.7)
+                 label=f'1-component (BIC = {bic_1comp:.2f} - AIC = {aic_1comp:.2f})', alpha=0.7)
 
         # Plot 2-component model
-        model_2comp = model_flux(best_params_2, wave_dense, obs_flux, kappa_dense_hot,
+        if add_sigma:
+            best_params_2_use = best_params_2[:-1]
+        else:
+            best_params_2_use = best_params_2
+        model_2comp = model_flux(best_params_2_use, wave_dense, obs_flux, kappa_dense_hot,
                                  redshift, distance, radius, n_components=2,
                                  kappa_interp_hot=kappa_dense_hot, kappa_interp_cold=kappa_dense_cold,
                                  dust_type=dust_type)
         plt.plot(wave_dense.value, model_2comp.value, 'r-', linewidth=2,
-                 label='2-component', alpha=0.7)
+                 label=f'2-component (BIC = {bic_2comp:.2f} - AIC = {aic_2comp:.2f})', alpha=0.7)
+
+        # Plot 3-component model
+        if add_sigma:
+            best_params_3_use = best_params_3[:-1]
+        else:
+            best_params_3_use = best_params_3
+        model_3comp = model_flux(best_params_3_use, wave_dense, obs_flux, kappa_dense_hot,
+                                 redshift, distance, radius, n_components=3,
+                                 kappa_interp_hot=kappa_dense_hot, kappa_interp_cold=kappa_dense_cold,
+                                 kappa_interp_warm=kappa_dense_warm, dust_type=dust_type)
+        plt.plot(wave_dense.value, model_3comp.value, 'g-', linewidth=2,
+                 label=f'3-component (BIC = {bic_3comp:.2f} - AIC = {aic_3comp:.2f})', alpha=0.7)
 
         # Plot individual components of the 2-component model
         # Cold component
@@ -1809,12 +1811,34 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
         comp1_model = model_flux(comp1_params, wave_dense, obs_flux, kappa_dense_cold,
                                  redshift, distance, radius, n_components=1, dust_type=dust_type)
         plt.plot(wave_dense.value, comp1_model.value, 'r--', alpha=0.5, linewidth=1.5,
-                 label='Cold')
+                 label='Cold (2-comp)')
 
         # Hot component
         comp2_params = (best_params_2[2], best_params_2[3])
         comp2_model = model_flux(comp2_params, wave_dense, obs_flux, kappa_dense_hot,
                                  redshift, distance, radius, n_components=1, dust_type=dust_type)
+        plt.plot(wave_dense.value, comp2_model.value, 'r:', alpha=0.5, linewidth=1.5,
+                 label='Hot (2-comp)')
+
+        # Plot individual components of the 3-component model
+        # Cold component
+        comp1_params_3 = (best_params_3[0], best_params_3[1])
+        comp1_model_3 = model_flux(comp1_params_3, wave_dense, obs_flux, kappa_dense_cold,
+                                   redshift, distance, radius, n_components=1, dust_type=dust_type)
+        plt.plot(wave_dense.value, comp1_model_3.value, 'g--', alpha=0.5, linewidth=1.5,
+                 label='Cold (3-comp)')
+        # Warm component
+        comp3_params = (best_params_3[4], best_params_3[5])
+        comp3_model = model_flux(comp3_params, wave_dense, obs_flux, kappa_dense_warm,
+                                 redshift, distance, radius, n_components=1, dust_type=dust_type)
+        plt.plot(wave_dense.value, comp3_model.value, 'g-.', alpha=0.5, linewidth=1.5,
+                 label='Warm (3-comp)')
+        # Hot component
+        comp2_params_3 = (best_params_3[2], best_params_3[3])
+        comp2_model_3 = model_flux(comp2_params_3, wave_dense, obs_flux, kappa_dense_hot,
+                                   redshift, distance, radius, n_components=1, dust_type=dust_type)
+        plt.plot(wave_dense.value, comp2_model_3.value, 'g:', alpha=0.5, linewidth=1.5,
+                 label='Hot (3-comp)')
 
         # Determine the optimal y-axis limits
         ymin = 10 ** (np.log10(np.nanmin(obs_flux.value)) - 0.2)
@@ -1824,9 +1848,6 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
         xmin = np.min([5, np.min(obs_wave.value) * 0.9])
         xmax = np.max([30, np.max(obs_wave.value) * 1.1])
 
-        plt.plot(wave_dense.value, comp2_model.value, 'r:', alpha=0.5, linewidth=1.5,
-                 label='Hot')
-        plt.title(rf'AIC = {delta_aic:.2f} $-$ BIC = {delta_bic:.2f}')
         plt.xlabel(r'Observed Wavelength ($\mu$m)')
         plt.ylabel('Flux Density (Jy)')
         plt.yscale('log')
@@ -1849,16 +1870,16 @@ def compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, objec
             'log_like_2': log_like_2,
             'aic_1comp': aic_1comp,
             'aic_2comp': aic_2comp,
-            'delta_aic': delta_aic,
+            'aic_3comp': aic_3comp,
             'bic_1comp': bic_1comp,
             'bic_2comp': bic_2comp,
-            'delta_bic': delta_bic
+            'bic_3comp': bic_3comp
         }
     }
 
 
 def full_model(filename, object_name, redshift, composition='carbon', grain_size=0.1, n_walkers=50, n_steps=1000, burn_in=0.75,
-               n_cores=1, sigma_clip=2, repeats=3, emcee_progress=True, n_filter_samples=1000, plot=False, plots_model=False,
+               n_cores=1, sigma_clip=2, repeats=3, emcee_progress=True, n_filter_samples=1000, plot=True, plots_model=False,
                plots_corner=False, plots_trace=False, output_dir='.', initial_pos=None, priors=None, composition_hot=None,
                composition_cold=None, composition_warm=None, dust_type='thin', radius=None, flat_mass_prior=True, add_sigma=True,
                distance=None):
@@ -1967,11 +1988,10 @@ def full_model(filename, object_name, redshift, composition='carbon', grain_size
                                                initial_pos=initial_pos, priors=priors, dust_type=dust_type, radius=radius, flat_mass_prior=flat_mass_prior,
                                                add_sigma=add_sigma, distance=distance)
 
-    if False:
-        results = compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name,
-                                results_1, results_2, composition1=composition, composition2=composition, grain_size=grain_size,
-                                obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters, output_dir=output_dir,
-                                plot_comparison=plot, composition_hot=composition_hot, composition_cold=composition_cold,
-                                dust_type=dust_type, radius=radius, add_sigma=add_sigma, distance=distance)
+    results = compare_models(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name, results_1,
+                             results_2, results_3, grain_size=grain_size, obs_wave_filters=obs_wave_filters,
+                             obs_trans_filters=obs_trans_filters, output_dir=output_dir, plot_comparison=plot,
+                             composition_hot=composition_hot, composition_cold=composition_cold, composition_warm=composition_warm,
+                             dust_type=dust_type, radius=radius, add_sigma=add_sigma, distance=distance)
 
-        return results
+    return results

@@ -247,59 +247,23 @@ data is not able to constrain it.
 
 That is a better fit to the data, but how do we know that? The ``full_model`` function also generates a comparsion plot in which it compares the one component
 fit and the two component fit to the data, as well as the BIC and AIC values for both models. The BIC (Bayesian Information Criterion) and AIC (Akaike Information Criterion)
-are both used to penalize models for their complexity, with lower values indicating a better fit. A larger difference between the BIC or AIC values of the two models indicates
-that one model is significantly better than the other.
+are both used to penalize models for their complexity, with lower values indicating a better fit.
 
 .. figure:: images/comparison_SN2017eaw.png
    :alt: BIC and AIC Comparison
    :align: center
    :width: 100%
 
-   **BIC and AIC Comparison.** Example of a BIC and AIC comparison between the one and two component model fit to the data of SN2017eaw.
+   **BIC and AIC Comparison.** Example of a BIC and AIC comparison between the one, two, and three component model fit to the data of SN2017eaw.
 
-In this case, the two component model is preferred over the one component model.
-
-Different Compositions
-~~~~~~~~~~~~~~~~~~~~~~
-
-Additionally, you can use the ``composition_hot`` and  ``composition_cold`` keys to specify separate compositions for the hot and cold dust components, respectively.
-Right now, both must have the same grain size. To do this, you can modify the ``fit_dust_model`` or ``full_model`` functions like this:
-
-.. code-block:: python
-
-    # Fit the two component model
-    results_2 = fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name, grain_size=grain_size,
-                               n_components=n_components, n_walkers=n_walkers, n_steps=n_steps, n_cores=n_cores,
-                               sigma_clip=sigma_clip, repeats=repeats, obs_wave_filters=obs_wave_filters,
-                               obs_trans_filters=obs_trans_filters, plot=True, output_dir='.',
-                               composition_hot='silicate', composition_cold='carbon')
-
-    # Run all model functions
-    full_model(filename, object_name, redshift, n_steps, n_walkers, grain_size=grain_size,
-               n_cores=n_cores, sigma_clip=sigma_clip, repeats=repeats, plot=True, output_dir='.',
-               composition_hot='silicate', composition_cold='carbon')
-
-.. figure:: images/SN2017eaw_2_model_fit_silicate_carbon.png
-   :alt: 2 Component Different Fit
-   :align: center
-   :width: 100%
-
-   **Two Component Model Fit.** Example of a two component model fit to the data of SN2017eaw, but with two different compositions for the hot and cold dust components.
-
-In this case, this is not a great fit.
-
+In this case, the two component model is preferred over the one component model. Make sure to compare the *difference* between the BIC and AIC values,
+as the absolute values depend on the number of data points and the number of parameters in the model. In this case the two component model is significantly
+lower than the one component model, indicating that it is a better fit to the data. The three component model is only marginally better than the two component model,
+but it is probably not worth the additional complexity.
 
 Optically Thick Case
 ~~~~~~~~~~~~~~~~~~~~
 
-You can also choose to fit optically thick dust by specifying ``dust_type = 'thick'``, you just need to also specify
-a radius in cm for the dust shell. All the other parameters are the same as before.
-
-.. code-block:: python
-
-    # Fit the two component model of optically thick dust
-    results_2 = fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name, grain_size=grain_size,
-                               n_components=n_components, n_walkers=n_walkers, n_steps=n_steps, n_cores=n_cores,
-                               sigma_clip=sigma_clip, repeats=repeats, obs_wave_filters=obs_wave_filters,
-                               obs_trans_filters=obs_trans_filters, plot=True, output_dir='.',
-                               dust_type='thick', radius=1e16)
+You can also choose to fit optically thick dust by specifying ``dust_type = 'thick'``. In this case you must also
+specify the radius of the dust shell in cm using the ``radius`` parameter. All the other parameters and functionality
+are the same as before.

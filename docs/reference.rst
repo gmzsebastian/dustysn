@@ -6,8 +6,9 @@ Reference
 Dust
 ----
 
-The functions in ``dustysn`` depend mostly on the mass absorption coefficient from [CITE] and [CITE].
-Currently, the supported compositions are carbonaceous and silicate dust. The carbonaceous dust can have
+The functions in ``dustysn`` are based off the mass absorption coefficients
+from `Sarangi et al. 2022 <https://ui.adsabs.harvard.edu/abs/2022A%26A...668A..57S/abstract>`__.
+Currently, the supported compositions are carbon and silicate dust. The carbon dust can have
 grain sizes of 0.01, 0.1, or 1.0 microns, while the silicate dust can have grain sizes of 0.1 microns.
 
 Models

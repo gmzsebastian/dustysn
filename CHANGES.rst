@@ -1,3 +1,11 @@
+0.1 (2025-07-14)
+----------------
+
+- Added support for three component models.
+- Fixed bugs in the fitting routine.
+- Added additional variance parameter.
+- Improved readthedocs documentation.
+
 0.0.2 (2025-06-03)
 ----------------
 
