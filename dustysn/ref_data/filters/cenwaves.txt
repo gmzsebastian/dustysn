@@ -41,3 +41,7 @@ JWST         MIRI          F1800W    17.873417
 JWST         MIRI          F2100W    20.560106
 JWST         MIRI          F2300C    22.449376
 JWST         MIRI          F2550W    25.151599
+Spitzer      IRAC          I1         3.507483
+Spitzer      IRAC          I2         4.436556
+Spitzer      IRAC          I3         5.628062
+Spitzer      IRAC          I4         7.589054	
