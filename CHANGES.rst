@@ -1,3 +1,10 @@
+0.2 (2025-12-03)
+----------------
+
+- Added documentation to specify redshift or distance.
+- Added support for Spitzer (@AstronoMoore).
+- Preparing for Zenodo submission.
+
 0.1 (2025-07-14)
 ----------------
 

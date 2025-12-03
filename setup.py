@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='dustysn',
-    version='0.1',
+    version='0.2',
     author='Sebastian Gomez',
     author_email='sebastian.gomez@austin.utexas.edu',
     description='Package to fit the SEDs of dusty supernovae.',

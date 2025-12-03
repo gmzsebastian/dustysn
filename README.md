@@ -23,7 +23,7 @@ import dustysn
 ```
 
 <p align="center">
-  <img src="docs/images/example_dustysn.png" width="800">
+  <img src="docs/images/SN2017eaw_2_model_fit.png" width="800">
   <br>
   <em>Example output for a Supernova.</em>
 </p>
@@ -45,7 +45,7 @@ pip install -e .
 ## Requirements
 
 * Python 3.7 or later
-* Having the ``emcee`` package installed
+* Having the ``emcee``, ``corner``, and ``astropy`` packages installed
 
 ## Citation
 
