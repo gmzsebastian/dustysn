@@ -146,6 +146,42 @@ The ``fit_dust_model`` is the main function used to fit the data, which uses MCM
                               obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters,
                               plot=True, output_dir='.', add_sigma=False)
 
+Alternatively, if you want to specify a distance in addition to a redshift, you can do so by adding the ``distance`` parameter, 
+which must be an ``astropy.Quantity`` object with distance units (e.g., ``distance=10*u.Mpc``). If you do not provide a distance,
+this will be calculated from the redshift using the default cosmology in Astropy. Even if you specify a distance, you must
+still provide a redshift, as this is used to calculate the rest-frame wavelengths.
+
+.. code-block:: python
+
+    from dustysn.model import import_data, fit_dust_model
+
+    # Define the parameters of the model
+    filename = 'SN2017eaw.txt' # File containing the data
+    object_name = 'SN2017eaw' # Name of the object
+    redshift = 0.001605 # Redshift of the object
+    distance = 7.12 * u.Mpc # Distance to the object
+    composition = 'silicate' # Composition of the dust ('silicate' or 'carbon')
+    grain_size = 0.1 # Grain size in microns
+    n_components = 1 # Number of dust components to fit (1 or 2)
+
+    # Define the parameters of the fit
+    n_steps = 400 # Number of steps in the MCMC fit
+    n_walkers = 50 # Number of walkers in the MCMC fit
+    n_cores = 6 # Number of parallel cores to use for the fit
+    sigma_clip = 2 # Sigma clipping to remove outliers
+    repeats = 2 # Number of times to repeat the fit
+
+    # Import data
+    obs_wave, obs_flux, obs_flux_err, obs_limits, obs_filters, obs_wave_filters, obs_trans_filters = import_data('SN2017eaw.txt')
+
+    # Fit the model
+    results_1 = fit_dust_model(obs_wave, obs_flux, obs_flux_err, obs_limits, redshift, object_name,
+                              composition=composition, grain_size=grain_size, n_components=n_components, n_walkers=n_walkers,
+                              n_steps=n_steps, n_cores=n_cores, sigma_clip=sigma_clip, repeats=repeats,
+                              obs_wave_filters=obs_wave_filters, obs_trans_filters=obs_trans_filters,
+                              plot=True, output_dir='.', add_sigma=False, distance=distance)
+
+
 .. figure:: images/SN2017eaw_1_model_False.png
    :alt: 1 Component Model Fit without Sigma
    :align: center
